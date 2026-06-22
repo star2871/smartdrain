@@ -1,6 +1,7 @@
 pipeline {
     agent {
         node {
+            label 'built-in'
             customWorkspace '/deploy/smart-drain'
         }
     }

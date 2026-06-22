@@ -37,6 +37,7 @@ docker compose -p smartdrain-dev up -d --build
 ```groovy
 agent {
     node {
+        label 'built-in'
         customWorkspace '/deploy/smart-drain'
     }
 }
