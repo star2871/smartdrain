@@ -172,6 +172,7 @@ backend/alembic/versions/__pycache__/
 # =========================
 # AI model files
 # =========================
+ai_service/model/*.pt
 *.pt
 *.pth
 *.pkl

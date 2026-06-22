@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
 
   migrate:
-    image: smartdrain-migrate
+    image: ${COMPOSE_PROJECT_NAME:-smartdrain}-backend
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -29,7 +29,7 @@ services:
     restart: "no"
 
   backend:
-    image: smartdrain-backend
+    image: ${COMPOSE_PROJECT_NAME:-smartdrain}-backend
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -59,6 +59,8 @@ services:
       BACKEND_BASE_URL: http://backend:8000
       BACKEND_CALLBACK_TIMEOUT_SECONDS: ${COMPOSE_BACKEND_CALLBACK_TIMEOUT_SECONDS:-10}
       BACKEND_CALLBACK_RETRY_COUNT: ${COMPOSE_BACKEND_CALLBACK_RETRY_COUNT:-1}
+    volumes:
+      - ${SMARTDRAIN_YOLO_MODEL_PATH:-./ai_service/model/best.pt}:/app/ai_service/model/best.pt:ro
     depends_on:
       backend:
         condition: service_healthy
@@ -67,7 +69,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 10s
+      start_period: 30s
     restart: unless-stopped
 
   frontend:
@@ -106,7 +108,7 @@ services:
 
   seed:
     profiles: ["seed"]
-    image: smartdrain-seed
+    image: ${COMPOSE_PROJECT_NAME:-smartdrain}-backend
     build:
       context: .
       dockerfile: backend/Dockerfile
