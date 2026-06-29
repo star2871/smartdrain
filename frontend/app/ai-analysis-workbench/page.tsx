@@ -22,13 +22,19 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
-import { previewAiAnalysis } from "@/lib/api/ai-analysis-workbench";
-import type { AiPreviewAnalysisResultDto } from "@/lib/api/types";
+import {
+    previewAiXgboostAnalysis,
+    previewAiYoloAnalysis,
+} from "@/lib/api/ai-analysis-workbench";
+import type {
+    AiPreviewAnalysisResultDto,
+    AiPreviewYoloResultDto,
+} from "@/lib/api/types";
 import { STATUS_META, type RiskLevel } from "@/lib/risk";
 import { cn } from "@/lib/utils";
 
 const TOKEN_STORAGE_KEY = "smartdrain-demo-control-token";
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
 
 type AnalysisRecord = {
     id: string;
@@ -46,8 +52,11 @@ export default function AiAnalysisWorkbenchPage() {
     const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [waterLevelCm, setWaterLevelCm] = useState(30);
     const [flowVelocityMps, setFlowVelocityMps] = useState(0.8);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isYoloSubmitting, setIsYoloSubmitting] = useState(false);
+    const [isXgboostSubmitting, setIsXgboostSubmitting] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [sizeNotice, setSizeNotice] = useState<string | null>(null);
+    const [latestYoloResult, setLatestYoloResult] = useState<AiPreviewYoloResultDto | null>(null);
     const [latestRecord, setLatestRecord] = useState<AnalysisRecord | null>(null);
     const [records, setRecords] = useState<AnalysisRecord[]>([]);
     const currentPreviewUrl = useRef<string | null>(null);
@@ -60,7 +69,9 @@ export default function AiAnalysisWorkbenchPage() {
         };
     }, []);
 
-    const canSubmit = Boolean(imageFile) && !isSubmitting;
+    const isSubmitting = isYoloSubmitting || isXgboostSubmitting;
+    const canRunYolo = Boolean(imageFile) && !isSubmitting;
+    const canRunXgboost = Boolean(latestYoloResult) && !isSubmitting;
     const latestResult = latestRecord?.result ?? null;
     const riskLevel = latestResult?.xgboostResult.riskLevel;
 
@@ -79,10 +90,11 @@ export default function AiAnalysisWorkbenchPage() {
         setWaterLevelCm(30);
         setFlowVelocityMps(0.8);
         setErrorMessage(null);
+        setLatestYoloResult(null);
         setLatestRecord(null);
     };
 
-    const runAnalysis = async () => {
+    const runYoloAnalysis = async () => {
         if (!imageFile) {
             setErrorMessage("분석할 이미지를 먼저 선택해주세요.");
             return;
@@ -92,36 +104,81 @@ export default function AiAnalysisWorkbenchPage() {
             return;
         }
         if (imageFile.size > MAX_IMAGE_BYTES) {
-            setErrorMessage("이미지 파일은 10MB 이하만 업로드할 수 있습니다.");
+            setSizeNotice(`이미지 파일은 최대 ${formatBytes(MAX_IMAGE_BYTES)}까지 업로드할 수 있습니다. 현재 파일은 ${formatBytes(imageFile.size)}입니다.`);
             return;
         }
 
-        setIsSubmitting(true);
+        setIsYoloSubmitting(true);
         setErrorMessage(null);
 
         try {
-            const response = await previewAiAnalysis({
+            const response = await previewAiYoloAnalysis({
                 image: imageFile,
+                token,
+            });
+
+            if (!response.success || !response.data) {
+                throw new Error(response.error?.message ?? "YOLO 이미지 분석 요청에 실패했습니다.");
+            }
+
+            setLatestYoloResult(response.data);
+            setLatestRecord(null);
+        } catch (error) {
+            if (isPayloadTooLargeError(error)) {
+                setSizeNotice(`이미지 파일은 최대 ${formatBytes(MAX_IMAGE_BYTES)}까지 업로드할 수 있습니다. 더 작은 이미지로 다시 선택해주세요.`);
+            } else {
+                setErrorMessage(error instanceof Error ? error.message : "YOLO 이미지 분석 요청에 실패했습니다.");
+            }
+        } finally {
+            setIsYoloSubmitting(false);
+        }
+    };
+
+    const runXgboostAnalysis = async () => {
+        if (!latestYoloResult) {
+            setErrorMessage("먼저 YOLO 이미지 분석을 실행해주세요.");
+            return;
+        }
+
+        setIsXgboostSubmitting(true);
+        setErrorMessage(null);
+
+        try {
+            const response = await previewAiXgboostAnalysis({
+                yoloResult: latestYoloResult,
                 waterLevelCm,
                 flowVelocityMps,
                 token,
             });
 
             if (!response.success || !response.data) {
-                throw new Error(response.error?.message ?? "AI 분석 요청에 실패했습니다.");
+                throw new Error(response.error?.message ?? "XGBoost 최종 판단 요청에 실패했습니다.");
             }
 
+            const combinedResult: AiPreviewAnalysisResultDto = {
+                ...response.data,
+                yoloResult: latestYoloResult,
+                fileName: latestYoloResult.fileName,
+                contentType: latestYoloResult.contentType,
+                imageSizeBytes: latestYoloResult.imageSizeBytes,
+                elapsedMs: latestYoloResult.elapsedMs,
+            };
+            const recordImageUrl = imageFile ? URL.createObjectURL(imageFile) : (imageUrl ?? "");
             const record: AnalysisRecord = {
-                id: `${Date.now()}-${imageFile.name}`,
-                imageUrl: URL.createObjectURL(imageFile),
-                result: response.data,
+                id: `${Date.now()}-${latestYoloResult.fileName ?? "image"}`,
+                imageUrl: recordImageUrl,
+                result: combinedResult,
             };
             setLatestRecord(record);
-            setRecords((current) => [record, ...current].slice(0, 8));
+            setRecords((current) => {
+                const next = [record, ...current];
+                next.slice(8).forEach((item) => URL.revokeObjectURL(item.imageUrl));
+                return next.slice(0, 8);
+            });
         } catch (error) {
-            setErrorMessage(error instanceof Error ? error.message : "AI 분석 요청에 실패했습니다.");
+            setErrorMessage(error instanceof Error ? error.message : "XGBoost 최종 판단 요청에 실패했습니다.");
         } finally {
-            setIsSubmitting(false);
+            setIsXgboostSubmitting(false);
         }
     };
 
@@ -190,7 +247,7 @@ export default function AiAnalysisWorkbenchPage() {
                                             분석할 빗물받이 이미지를 선택하세요
                                         </span>
                                         <span className="text-xs text-muted-foreground">
-                                            jpg, png, webp · 최대 10MB
+                                            jpg, png, webp · 최대 50MB
                                         </span>
                                     </>
                                 )}
@@ -203,6 +260,15 @@ export default function AiAnalysisWorkbenchPage() {
                                         if (currentPreviewUrl.current) {
                                             URL.revokeObjectURL(currentPreviewUrl.current);
                                             currentPreviewUrl.current = null;
+                                        }
+                                        setLatestYoloResult(null);
+                                        setLatestRecord(null);
+                                        if (file && file.size > MAX_IMAGE_BYTES) {
+                                            setImageFile(null);
+                                            setImageUrl(null);
+                                            setSizeNotice(`이미지 파일은 최대 ${formatBytes(MAX_IMAGE_BYTES)}까지 업로드할 수 있습니다. 현재 파일은 ${formatBytes(file.size)}입니다.`);
+                                            event.currentTarget.value = "";
+                                            return;
                                         }
                                         setImageFile(file);
                                         if (file) {
@@ -247,13 +313,21 @@ export default function AiAnalysisWorkbenchPage() {
                             />
 
                             <div className="flex flex-wrap gap-2">
-                                <Button type="button" disabled={!canSubmit} onClick={runAnalysis}>
-                                    {isSubmitting ? (
+                                <Button type="button" disabled={!canRunYolo} onClick={runYoloAnalysis}>
+                                    {isYoloSubmitting ? (
+                                        <Loader2 className="size-4 animate-spin" />
+                                    ) : (
+                                        <FileImage className="size-4" />
+                                    )}
+                                    YOLO 이미지 분석
+                                </Button>
+                                <Button type="button" disabled={!canRunXgboost} onClick={runXgboostAnalysis}>
+                                    {isXgboostSubmitting ? (
                                         <Loader2 className="size-4 animate-spin" />
                                     ) : (
                                         <BrainCircuit className="size-4" />
                                     )}
-                                    분석 실행
+                                    XGBoost 최종 판단
                                 </Button>
                                 <Button type="button" variant="outline" onClick={resetForm}>
                                     <RotateCcw className="size-4" /> 입력 초기화
@@ -277,23 +351,25 @@ export default function AiAnalysisWorkbenchPage() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
+                            {latestYoloResult && (
+                                <div className="grid gap-3 md:grid-cols-3">
+                                    <ResultMetric
+                                        label="YOLO 막힘률"
+                                        value={formatPercent(latestYoloResult.obstructionRatio)}
+                                    />
+                                    <ResultMetric
+                                        label="YOLO 신뢰도"
+                                        value={formatPercent(latestYoloResult.confidenceScore)}
+                                    />
+                                    <ResultMetric
+                                        label="YOLO 처리 시간"
+                                        value={latestYoloResult.elapsedMs ? `${latestYoloResult.elapsedMs}ms` : "-"}
+                                    />
+                                </div>
+                            )}
+
                             {latestResult ? (
                                 <>
-                                    <div className="grid gap-3 md:grid-cols-3">
-                                        <ResultMetric
-                                            label="YOLO 막힘률"
-                                            value={formatPercent(latestResult.yoloResult.obstructionRatio)}
-                                        />
-                                        <ResultMetric
-                                            label="YOLO 신뢰도"
-                                            value={formatPercent(latestResult.yoloResult.confidenceScore)}
-                                        />
-                                        <ResultMetric
-                                            label="처리 시간"
-                                            value={latestResult.elapsedMs ? `${latestResult.elapsedMs}ms` : "-"}
-                                        />
-                                    </div>
-
                                     <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
                                         <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
                                             <div className="mb-2 flex items-center justify-between gap-2">
@@ -350,6 +426,16 @@ export default function AiAnalysisWorkbenchPage() {
                                         </div>
                                     </div>
                                 </>
+                            ) : latestYoloResult ? (
+                                <div className="flex min-h-52 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-cyan-300 bg-cyan-50 p-6 text-center dark:border-cyan-800 dark:bg-cyan-950/30">
+                                    <BrainCircuit className="size-10 text-cyan-600" />
+                                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                        YOLO 분석이 완료되었습니다.
+                                    </p>
+                                    <p className="max-w-md text-sm text-muted-foreground">
+                                        수위·유속 값을 조정한 뒤 XGBoost 최종 판단을 실행하면 센서값이 반영된 최종 위험도가 표시됩니다.
+                                    </p>
+                                </div>
                             ) : (
                                 <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center dark:border-slate-700 dark:bg-slate-900/60">
                                     <BrainCircuit className="size-10 text-slate-400" />
@@ -367,6 +453,29 @@ export default function AiAnalysisWorkbenchPage() {
 
                 <AnalysisHistory records={records} onSelect={setLatestRecord} />
             </main>
+
+            {sizeNotice && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+                    <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-950">
+                        <div className="flex items-start gap-3">
+                            <AlertCircle className="mt-0.5 size-5 shrink-0 text-red-500" />
+                            <div className="min-w-0">
+                                <h2 className="text-base font-bold text-slate-950 dark:text-slate-50">
+                                    이미지 용량이 너무 큽니다
+                                </h2>
+                                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                                    {sizeNotice}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="mt-4 flex justify-end">
+                            <Button type="button" onClick={() => setSizeNotice(null)}>
+                                확인
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -577,4 +686,12 @@ function formatBytes(value: number) {
 function clampNumber(value: number, min: number, max: number) {
     if (!Number.isFinite(value)) return min;
     return Math.min(Math.max(value, min), max);
+}
+
+function isPayloadTooLargeError(error: unknown) {
+    if (typeof error !== "object" || error === null) return false;
+    const response = "response" in error ? error.response : undefined;
+    if (typeof response !== "object" || response === null) return false;
+    const status = "status" in response ? response.status : undefined;
+    return status === 413;
 }

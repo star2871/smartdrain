@@ -7,17 +7,37 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.schemas.api_response import api_response
-from app.services.ai_client import request_ai_preview_analysis
+from app.services.ai_client import (
+    request_ai_preview_analysis,
+    request_ai_preview_xgboost_analysis,
+    request_ai_preview_yolo_analysis,
+)
 from app.services import demo_simulator
 
 router = APIRouter(prefix="/api/demo", tags=["demo"])
 
 ALLOWED_PREVIEW_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
-MAX_PREVIEW_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_PREVIEW_IMAGE_BYTES = 50 * 1024 * 1024
 
 
 class DemoPresetRequest(BaseModel):
     preset: str
+    waterLevelCm: float | None = None
+    flowVelocityMps: float | None = None
+
+
+class PreviewYoloResultRequest(BaseModel):
+    obstructionRatio: float | None
+    confidenceScore: float | None
+    yoloStatus: str
+    rawYoloStatus: str | None = None
+
+
+class PreviewXgboostRequest(BaseModel):
+    yoloResult: PreviewYoloResultRequest
+    waterLevelCm: float
+    flowVelocityMps: float
+    qualityStatus: str = "valid"
 
 
 class DemoScenarioStepRequest(BaseModel):
@@ -62,15 +82,7 @@ async def preview_ai_analysis(
     qualityStatus: str = Form("valid"),
     _: None = Depends(require_demo_access),
 ):
-    if image.content_type not in ALLOWED_PREVIEW_CONTENT_TYPES:
-        raise HTTPException(status_code=422, detail="지원하지 않는 이미지 형식입니다.")
-
-    image_bytes = await image.read()
-    if not image_bytes:
-        raise HTTPException(status_code=422, detail="이미지 파일이 비어 있습니다.")
-    if len(image_bytes) > MAX_PREVIEW_IMAGE_BYTES:
-        raise HTTPException(status_code=413, detail="이미지 파일은 10MB 이하만 업로드할 수 있습니다.")
-
+    image_bytes = await _read_preview_image_bytes(image)
     result = await request_ai_preview_analysis(
         image_bytes=image_bytes,
         filename=image.filename or "preview-image.jpg",
@@ -82,6 +94,29 @@ async def preview_ai_analysis(
     return api_response(result, message="AI preview analysis completed")
 
 
+@router.post("/ai-analysis/preview/yolo")
+async def preview_ai_yolo_analysis(
+    image: UploadFile = File(...),
+    _: None = Depends(require_demo_access),
+):
+    image_bytes = await _read_preview_image_bytes(image)
+    result = await request_ai_preview_yolo_analysis(
+        image_bytes=image_bytes,
+        filename=image.filename or "preview-image.jpg",
+        content_type=image.content_type or "application/octet-stream",
+    )
+    return api_response(result, message="AI preview YOLO analysis completed")
+
+
+@router.post("/ai-analysis/preview/xgboost")
+async def preview_ai_xgboost_analysis(
+    payload: PreviewXgboostRequest,
+    _: None = Depends(require_demo_access),
+):
+    result = await request_ai_preview_xgboost_analysis(payload.model_dump())
+    return api_response(result, message="AI preview XGBoost analysis completed")
+
+
 @router.post("/drains/{drain_id}/preset")
 async def apply_drain_preset(
     drain_id: str,
@@ -90,7 +125,13 @@ async def apply_drain_preset(
     db: Session = Depends(get_db),
 ):
     try:
-        status = await demo_simulator.apply_manual_preset(db, drain_id, payload.preset)
+        status = await demo_simulator.apply_manual_preset(
+            db,
+            drain_id,
+            payload.preset,
+            water_level_cm=payload.waterLevelCm,
+            flow_velocity_mps=payload.flowVelocityMps,
+        )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -205,3 +246,15 @@ async def reset_demo_scenario(
     db: Session = Depends(get_db),
 ):
     return api_response(await demo_simulator.reset_demo(db), message="Demo scenario reset")
+
+
+async def _read_preview_image_bytes(image: UploadFile) -> bytes:
+    if image.content_type not in ALLOWED_PREVIEW_CONTENT_TYPES:
+        raise HTTPException(status_code=422, detail="지원하지 않는 이미지 형식입니다.")
+
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(status_code=422, detail="이미지 파일이 비어 있습니다.")
+    if len(image_bytes) > MAX_PREVIEW_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="이미지 파일은 50MB 이하만 업로드할 수 있습니다.")
+    return image_bytes

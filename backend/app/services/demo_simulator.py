@@ -234,12 +234,33 @@ async def get_demo_status() -> dict[str, Any]:
         return _control_status()
 
 
-async def apply_manual_preset(db: Session, drain_code: str, preset: str) -> dict[str, Any]:
+async def apply_manual_preset(
+    db: Session,
+    drain_code: str,
+    preset: str,
+    water_level_cm: float | None = None,
+    flow_velocity_mps: float | None = None,
+) -> dict[str, Any]:
     normalized_preset = preset.strip().upper()
     if normalized_preset not in MANUAL_PRESETS:
         raise ValueError(f"Unsupported demo preset: {preset}")
 
     scenario = _scenario_from_preset(drain_code, normalized_preset)
+    scenario = replace(
+        scenario,
+        water_level_cm=_clamp_float(
+            settings.DEMO_MANUAL_DEFAULT_WATER_LEVEL_CM if water_level_cm is None else water_level_cm,
+            0.0,
+            120.0,
+            1,
+        ),
+        flow_velocity_mps=_clamp_float(
+            settings.DEMO_MANUAL_DEFAULT_FLOW_VELOCITY_MPS if flow_velocity_mps is None else flow_velocity_mps,
+            0.0,
+            3.0,
+            2,
+        ),
+    )
     drain = _get_drain_by_code(db, scenario.drain_code)
     if drain is None:
         raise LookupError(f"Drain not found: {scenario.drain_code}")
@@ -737,6 +758,8 @@ def _control_status() -> dict[str, Any]:
         "targetDrainCode": settings.DEMO_SIMULATOR_TARGET_DRAIN_CODE,
         "intervalSeconds": _scenario_interval_seconds(),
         "defaultIntervalSeconds": settings.DEMO_SIMULATOR_INTERVAL_SECONDS,
+        "manualDefaultWaterLevelCm": settings.DEMO_MANUAL_DEFAULT_WATER_LEVEL_CM,
+        "manualDefaultFlowVelocityMps": settings.DEMO_MANUAL_DEFAULT_FLOW_VELOCITY_MPS,
         "rehearsalIntervals": list(REHEARSAL_INTERVAL_SECONDS),
         "lastAction": _CONTROL_STATE.last_action,
         "lastError": _CONTROL_STATE.last_error,
@@ -746,3 +769,7 @@ def _control_status() -> dict[str, Any]:
 
 def _scenario_interval_seconds() -> int:
     return _CONTROL_STATE.interval_seconds or settings.DEMO_SIMULATOR_INTERVAL_SECONDS
+
+
+def _clamp_float(value: float, minimum: float, maximum: float, digits: int) -> float:
+    return round(min(max(float(value), minimum), maximum), digits)

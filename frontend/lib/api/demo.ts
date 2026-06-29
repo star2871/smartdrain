@@ -17,6 +17,8 @@ export type DemoStatus = {
     targetDrainCode: string;
     intervalSeconds: number;
     defaultIntervalSeconds: number;
+    manualDefaultWaterLevelCm: number;
+    manualDefaultFlowVelocityMps: number;
     rehearsalIntervals: number[];
     lastAction: string;
     lastError: string | null;
@@ -80,11 +82,15 @@ export async function getDemoStatus(options?: DemoRequestOptions) {
 export async function applyDemoPreset(
     drainId: string,
     preset: DemoPreset,
+    sensorValues?: {
+        waterLevelCm: number;
+        flowVelocityMps: number;
+    },
     options?: DemoRequestOptions,
 ) {
     const response = await apiClient.post<unknown>(
         `/api/demo/drains/${encodeURIComponent(drainId)}/preset`,
-        { preset },
+        { preset, ...sensorValues },
         { headers: demoHeaders(options) },
     );
     return parseDemoResponse(response.data);
@@ -218,6 +224,8 @@ function isDemoStatus(value: unknown): value is DemoStatus {
         typeof value.targetDrainCode === "string" &&
         typeof value.intervalSeconds === "number" &&
         typeof value.defaultIntervalSeconds === "number" &&
+        typeof value.manualDefaultWaterLevelCm === "number" &&
+        typeof value.manualDefaultFlowVelocityMps === "number" &&
         Array.isArray(value.rehearsalIntervals) &&
         value.rehearsalIntervals.every((item) => typeof item === "number") &&
         typeof value.lastAction === "string" &&

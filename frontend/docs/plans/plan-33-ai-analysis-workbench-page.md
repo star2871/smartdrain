@@ -42,6 +42,10 @@
 | 대시보드 반영 | 이번 범위에서 제외하고 나중에 진행 |
 | 수정 범위 | frontend 밖 backend, ai_service 수정 가능 |
 | 목표 결과 | 실제 이미지를 올리면 분석 결과를 화면에서 확인 가능 |
+| 추가 개선 | 큰 이미지 업로드 시 413 오류를 줄이고, 제한 초과는 화면 팝업으로 안내 |
+| 분석 분리 | best.pt 기반 YOLO 이미지 분석과 센서값 기반 XGBoost 최종 판단을 분리 |
+| 시연 제어 | `/demo-control` 수동 preset은 지정 이미지 경로를 유지하고 수위·유속만 직접 입력 |
+| 수동 기본값 | 시연 제어 기본 수위·유속은 DB가 아니라 환경 변수로 관리 |
 
 아래 항목은 구현 또는 운영 중 추가 확인이 필요하다.
 
@@ -56,6 +60,8 @@
 | 결과 비교 방식 | 단일 결과만 표시 / 여러 실행 결과 누적 비교 | 이미지 선별 목적이므로 최근 실행 결과를 목록으로 누적 비교한다. |
 | 보안 | 공개 접근 / demo token / Cloudflare Access | `/demo-control`과 같은 보호 정책을 적용한다. |
 | 구현 범위 | 프론트만 / 백엔드 API 포함 / AI 서버 API 포함 | Frontend, Backend proxy, AI Service preview endpoint를 함께 구현한다. |
+| 분석 실행 단위 | 통합 실행 / YOLO 후 XGBoost 분리 실행 | 같은 이미지에 센서값만 바꿔 비교할 수 있도록 YOLO와 XGBoost 실행을 분리한다. |
+| 업로드 제한 | 10MB 유지 / 50MB 상향 / 무제한 | Nginx, Backend, AI Service 제한을 50MB로 맞추고 프론트에서 초과 파일을 사전 안내한다. |
 
 ## 5. 화면 구성 제안
 
@@ -189,11 +195,10 @@ AI 서버 수정이 어렵다면 1차는 기존 테스트 API를 조합한다.
 ```text
 사용자 이미지 업로드
 -> 프론트 미리보기 생성
--> 수위/유속 입력
--> preview 분석 API 호출
--> 백엔드가 AI 서버에 이미지와 센서값 전달
--> AI 서버가 YOLO 분석
--> YOLO 결과와 센서값으로 XGBoost 판단
+-> best.pt 기반 YOLO 이미지 분석 실행
+-> YOLO 막힘률, 신뢰도, 상태를 화면에 보관
+-> 수위/유속 입력 또는 조정
+-> YOLO 결과와 센서값으로 XGBoost 최종 판단 실행
 -> 백엔드가 단건 응답 반환
 -> 프론트가 결과 카드와 비교 목록에 표시
 ```
@@ -270,6 +275,19 @@ AI 서버 수정이 어렵다면 1차는 기존 테스트 API를 조합한다.
 | AI 호출 | 업로드 이미지와 센서값으로 실제 분석 실행 |
 | 오류 처리 | AI 서버 지연, 실패, 낮은 confidence 처리 |
 | 응답 변환 | 프론트가 바로 표시 가능한 camelCase DTO 반환 |
+| 분리 실행 | YOLO preview endpoint와 XGBoost preview endpoint를 나누어 제공 |
+| 업로드 크기 | 프론트, Nginx, Backend, AI Service 제한값을 일관되게 적용 |
+
+### Step 3-1. Demo 수동 시연 센서값 제어
+
+완료 기준:
+
+| 항목 | 기준 |
+| --- | --- |
+| 이미지 경로 | 기존 preset별 지정 이미지 경로를 유지 |
+| 센서값 입력 | `/demo-control`에서 수위와 유속을 직접 입력 |
+| 기본값 | `DEMO_MANUAL_DEFAULT_WATER_LEVEL_CM`, `DEMO_MANUAL_DEFAULT_FLOW_VELOCITY_MPS` 환경 변수 사용 |
+| 저장 정책 | 개발자 시연용 값이므로 별도 DB 설정 테이블은 추가하지 않음 |
 
 ### Step 4. 발표 후보 선별 보강
 

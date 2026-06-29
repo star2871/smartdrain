@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     DEMO_SIMULATOR_TARGET_DRAIN_CODE: str = "DR-003"
     DEMO_SIMULATOR_AUTO_START: bool = False
     DEMO_SIMULATOR_RANDOMIZE: bool = True
+    DEMO_MANUAL_DEFAULT_WATER_LEVEL_CM: float = 30.0
+    DEMO_MANUAL_DEFAULT_FLOW_VELOCITY_MPS: float = 0.8
     DEMO_CONTROL_TOKEN: str | None = None
 
     model_config = SettingsConfigDict(
