@@ -224,6 +224,8 @@ Jenkins dev branch checkout
 
 이 방향은 배포 구조를 바꾸지 않고, 기존 VM 빌드·Compose·Jenkins 흐름 안에서 배포 직후 502 타이밍 문제를 줄이는 접근이다.
 
+이번 브랜치에서는 이 1차 방향을 적용한다. `deploy.sh`는 compose 배포 후 `nginx`를 `--force-recreate`로 새로 띄우고, `smoke-test.sh`는 `/`와 `/api/dashboard/summary`를 제한된 시간 동안 retry한 뒤 최종 실패 시 진단 로그를 출력하도록 수정한다.
+
 #### 수정 전 확인할 사항
 
 | 확인 항목 | 추천 |

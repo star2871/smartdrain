@@ -3,6 +3,7 @@ set -eu
 
 cd "${DEPLOY_DIR:?DEPLOY_DIR is required}"
 docker compose -p "$COMPOSE_PROJECT_NAME" up --detach --build --remove-orphans
+docker compose -p "$COMPOSE_PROJECT_NAME" up --detach --no-deps --force-recreate nginx
 docker compose -p "$COMPOSE_PROJECT_NAME" ps
 
 nginx_conf_path="${COMPOSE_NGINX_CONF_PATH:-./nginx/default.conf}"
