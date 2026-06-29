@@ -51,3 +51,120 @@ async def request_ai_analysis(payload: dict[str, Any]) -> AiAnalysisRunResponse:
             detail="AI server rejected analysis request",
         )
     return AiAnalysisRunResponse.model_validate(data)
+
+
+async def request_ai_preview_analysis(
+    image_bytes: bytes,
+    filename: str,
+    content_type: str,
+    water_level_cm: float,
+    flow_velocity_mps: float,
+    quality_status: str = "valid",
+) -> dict[str, Any]:
+    if not settings.AI_SERVER_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI server is disabled",
+        )
+
+    url = f"{settings.AI_SERVER_BASE_URL.rstrip('/')}/ai/analysis/preview"
+    data = {
+        "water_level_cm": str(water_level_cm),
+        "flow_velocity_mps": str(flow_velocity_mps),
+        "quality_status": quality_status,
+    }
+    files = {
+        "image": (filename, image_bytes, content_type),
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=settings.AI_SERVER_TIMEOUT_SECONDS) as client:
+            response = await client.post(url, data=data, files=files)
+            response.raise_for_status()
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI server request timed out",
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"AI server returned {exc.response.status_code}",
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI server connection failed",
+        ) from exc
+
+    return response.json()
+
+
+async def request_ai_preview_yolo_analysis(
+    image_bytes: bytes,
+    filename: str,
+    content_type: str,
+) -> dict[str, Any]:
+    if not settings.AI_SERVER_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI server is disabled",
+        )
+
+    url = f"{settings.AI_SERVER_BASE_URL.rstrip('/')}/ai/analysis/preview/yolo"
+    files = {
+        "image": (filename, image_bytes, content_type),
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=settings.AI_SERVER_TIMEOUT_SECONDS) as client:
+            response = await client.post(url, files=files)
+            response.raise_for_status()
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI server request timed out",
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"AI server returned {exc.response.status_code}",
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI server connection failed",
+        ) from exc
+
+    return response.json()
+
+
+async def request_ai_preview_xgboost_analysis(payload: dict[str, Any]) -> dict[str, Any]:
+    if not settings.AI_SERVER_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI server is disabled",
+        )
+
+    url = f"{settings.AI_SERVER_BASE_URL.rstrip('/')}/ai/analysis/preview/xgboost"
+    try:
+        async with httpx.AsyncClient(timeout=settings.AI_SERVER_TIMEOUT_SECONDS) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI server request timed out",
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"AI server returned {exc.response.status_code}",
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI server connection failed",
+        ) from exc
+
+    return response.json()

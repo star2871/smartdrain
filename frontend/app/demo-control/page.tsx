@@ -80,6 +80,10 @@ export default function DemoControlPage() {
     );
     const [selectedDrainId, setSelectedDrainId] = useState("DR-005");
     const [selectedWeatherStep, setSelectedWeatherStep] = useState("LIGHT_RAIN");
+    const [manualSensorValues, setManualSensorValues] = useState<{
+        waterLevelCm: number;
+        flowVelocityMps: number;
+    } | null>(null);
     const [lastMessage, setLastMessage] = useState<string | null>(null);
     const effectiveSelectedDrainId = drains.some((drain) => drain.id === selectedDrainId)
         ? selectedDrainId
@@ -125,6 +129,8 @@ export default function DemoControlPage() {
     const isBusy = runAction.isPending;
     const selectedDrain = drains.find((drain) => drain.id === effectiveSelectedDrainId);
     const status = statusQuery.data;
+    const manualWaterLevelCm = manualSensorValues?.waterLevelCm ?? status?.manualDefaultWaterLevelCm ?? 30;
+    const manualFlowVelocityMps = manualSensorValues?.flowVelocityMps ?? status?.manualDefaultFlowVelocityMps ?? 0.8;
 
     const saveToken = useCallback(() => {
         window.sessionStorage.setItem(TOKEN_STORAGE_KEY, token.trim());
@@ -212,6 +218,41 @@ export default function DemoControlPage() {
                                 </select>
                             </div>
 
+                            <div className="grid gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                                <div>
+                                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                        수동 시연 센서값
+                                    </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        이미지는 preset별 지정 경로를 사용하고, 수위·유속만 직접 지정합니다.
+                                    </p>
+                                </div>
+                                <DemoSensorInput
+                                    label="수위"
+                                    value={manualWaterLevelCm}
+                                    min={0}
+                                    max={120}
+                                    step={1}
+                                    suffix="cm"
+                                    onChange={(value) => setManualSensorValues({
+                                        waterLevelCm: value,
+                                        flowVelocityMps: manualFlowVelocityMps,
+                                    })}
+                                />
+                                <DemoSensorInput
+                                    label="유속"
+                                    value={manualFlowVelocityMps}
+                                    min={0}
+                                    max={3}
+                                    step={0.05}
+                                    suffix="m/s"
+                                    onChange={(value) => setManualSensorValues({
+                                        waterLevelCm: manualWaterLevelCm,
+                                        flowVelocityMps: value,
+                                    })}
+                                />
+                            </div>
+
                             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                                 {PRESET_ACTIONS.map((action) => (
                                     <Button
@@ -221,7 +262,15 @@ export default function DemoControlPage() {
                                         className={cn("h-10", action.className)}
                                         disabled={isBusy || !effectiveSelectedDrainId}
                                         onClick={() => trigger(
-                                            () => applyDemoPreset(effectiveSelectedDrainId, action.preset, authOptions),
+                                            () => applyDemoPreset(
+                                                effectiveSelectedDrainId,
+                                                action.preset,
+                                                {
+                                                    waterLevelCm: manualWaterLevelCm,
+                                                    flowVelocityMps: manualFlowVelocityMps,
+                                                },
+                                                authOptions,
+                                            ),
                                             `${effectiveSelectedDrainId}에 ${action.label}을 실행했습니다.`,
                                         )}
                                     >
@@ -486,6 +535,60 @@ function Metric({
             </dd>
         </div>
     );
+}
+
+function DemoSensorInput({
+    label,
+    value,
+    min,
+    max,
+    step,
+    suffix,
+    onChange,
+}: {
+    label: string;
+    value: number;
+    min: number;
+    max: number;
+    step: number;
+    suffix: string;
+    onChange: (value: number) => void;
+}) {
+    return (
+        <div className="grid gap-2">
+            <div className="flex items-center justify-between gap-3">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                    {label}
+                </label>
+                <div className="flex items-center gap-2">
+                    <input
+                        className="h-8 w-24 rounded-lg border border-input bg-background px-2 text-right text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/30"
+                        type="number"
+                        min={min}
+                        max={max}
+                        step={step}
+                        value={value}
+                        onChange={(event) => onChange(clampNumber(Number(event.target.value), min, max))}
+                    />
+                    <span className="w-8 text-xs text-muted-foreground">{suffix}</span>
+                </div>
+            </div>
+            <input
+                className="w-full accent-cyan-600"
+                type="range"
+                min={min}
+                max={max}
+                step={step}
+                value={value}
+                onChange={(event) => onChange(Number(event.target.value))}
+            />
+        </div>
+    );
+}
+
+function clampNumber(value: number, min: number, max: number) {
+    if (!Number.isFinite(value)) return min;
+    return Math.min(Math.max(value, min), max);
 }
 
 function formatNullableNumber(value: number | null | undefined, suffix: string) {

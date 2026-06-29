@@ -161,3 +161,43 @@ export type DrainRealtimeEventDto =
     | DrainStatusUpdatedEventDto
     | YoloResultUpdatedEventDto
     | XgboostResultUpdatedEventDto;
+
+export type AiPreviewYoloResultDto = {
+    obstructionRatio: number | null;
+    confidenceScore: number | null;
+    yoloStatus: YoloStatus;
+    rawYoloStatus?: string | null;
+    fileName?: string | null;
+    contentType?: string | null;
+    imageSizeBytes?: number | null;
+    elapsedMs?: number | null;
+};
+
+export type AiPreviewXgboostResultDto = {
+    input: {
+        waterLevelCm: number;
+        flowVelocityMps: number;
+        qualityStatus: string;
+        features: {
+            obstructionRatio: number | null;
+            confidenceScore: number | null;
+            waterLevel: number | null;
+            flowVelocity: number | null;
+        };
+    };
+    xgboostResult: {
+        riskScore: number | null;
+        riskLevel: RiskLevel;
+        finalDecision: string;
+        modelVersion?: string | null;
+    };
+    createdAt: string;
+};
+
+export type AiPreviewAnalysisResultDto = AiPreviewXgboostResultDto & {
+    yoloResult: AiPreviewYoloResultDto;
+    fileName?: string | null;
+    contentType?: string | null;
+    imageSizeBytes?: number | null;
+    elapsedMs?: number | null;
+};
