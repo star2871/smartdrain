@@ -102,6 +102,7 @@ export function DashboardMainContent({
                         <DrainDetailPanel
                             drain={selectedDrain}
                             imageUrl={selectedDrain.latestImageUrl ?? undefined}
+                            showImageRefreshPlaceholder
                         />
                     </div>
                 ) : !isLoading && drains.length === 0 ? (
