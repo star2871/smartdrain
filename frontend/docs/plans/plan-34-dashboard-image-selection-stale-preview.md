@@ -149,6 +149,90 @@ FallbackImage
 | 확대 미리보기 | 이미지 확대 버튼 클릭 | 현재 선택된 시설의 이미지 또는 fallback만 표시 |
 | 모바일/데스크톱 | 작은 화면과 2xl 화면에서 확인 | 이미지 영역 레이아웃이 흔들리거나 텍스트와 겹치지 않음 |
 
+### Nginx 502 재발 방지 확인
+
+이미지 선택 문제는 화면 UX 이슈지만, 일반 compose 배포 조건에서 문제가 더 두드러지는 배경에는 Nginx 경로도 함께 확인할 필요가 있다.
+
+이번 브랜치에서 확인한 현재 기준은 아래와 같다.
+
+| 확인 항목 | 현재 확인 결과 | 추천 방향 |
+| --- | --- | --- |
+| 운영 Nginx upstream | `nginx/default.conf`가 `backend:8000`, `frontend:3000` 서비스 이름을 사용 | 유지 |
+| 개발 Nginx upstream | `nginx/default.dev.conf`가 `backend:8000`, `frontend:3000` 서비스 이름을 사용 | 유지 |
+| 직접 IP 참조 | `172.21.0.4`, `172.21.0.5` 같은 컨테이너 IP 직접 참조는 검색되지 않음 | IP 직접 참조 금지 |
+| Compose 서비스명 | `docker-compose.yml`의 서비스명이 `backend`, `frontend`, `nginx`로 정의됨 | Nginx `proxy_pass`는 서비스명 기준 유지 |
+
+컨테이너 IP는 재생성될 때 바뀔 수 있으므로 Nginx가 `172.x.x.x` 같은 IP를 직접 보면 컨테이너 재생성 후 502가 날 수 있다. Compose 네트워크에서는 서비스 이름이 내부 DNS로 해석되므로, `proxy_pass http://frontend:3000;`, `proxy_pass http://backend:8000;` 형태를 기준으로 유지한다.
+
+### Jenkins 배포 직후 Nginx 502 진단 계획
+
+사용자 추가 확인 결과, 현재 502는 설정 파일의 IP 하드코딩 문제가 아니라 **배포 직후 Nginx 프로세스와 재생성된 upstream 컨테이너의 연결 타이밍/상태 문제**일 가능성이 높다.
+
+현재 Jenkins 배포 구조는 아래와 같다.
+
+```text
+Jenkins dev branch checkout
+-> VM 내부에서 docker compose build
+-> docker compose up --detach --build --remove-orphans
+-> frontend/backend/ai-service 컨테이너 재생성
+-> nginx 컨테이너는 변경이 없으면 기존 Running 상태 유지
+-> smoke-test.sh가 nginx 컨테이너 내부에서 /, /api/dashboard/summary를 1회 요청
+```
+
+확인한 파일 기준 구조는 다음과 같다.
+
+| 파일 | 현재 구조 | 의심 지점 |
+| --- | --- | --- |
+| `Jenkinsfile` | `Deploy` 직후 `Smoke test` stage 실행 | 배포 직후 안정화 대기 시간이 짧을 수 있음 |
+| `.jenkins/scripts/deploy.sh` | `docker compose -p "$COMPOSE_PROJECT_NAME" up --detach --build --remove-orphans` 실행 | nginx 강제 재생성, reload, restart가 없음 |
+| `.jenkins/scripts/smoke-test.sh` | nginx health가 `healthy`면 `/`, `/api/dashboard/summary`를 각각 1회 `wget` | nginx 자체 health와 upstream frontend/backend 연결 가능 상태가 다를 수 있음 |
+| `docker-compose.yml` | nginx `depends_on`은 backend/frontend `service_healthy` 조건 | nginx가 새로 생성될 때만 의미가 크고, 기존 nginx가 Running이면 upstream 재해석/대기 보장이 약함 |
+| `nginx/default*.conf` | `proxy_pass http://frontend:3000;`, `proxy_pass http://backend:8000;` | 서비스명 사용은 맞지만, 실행 중인 nginx가 이미 해석한 upstream 상태를 즉시 갱신하지 못할 수 있음 |
+
+#### 답해야 할 핵심 질문
+
+| 질문 | 현재 판단 |
+| --- | --- |
+| frontend/backend 재생성 후 nginx가 기존 상태로 유지되면 upstream 연결 문제가 생길 수 있는가? | 가능성이 있다. 특히 Nginx가 기존 DNS 해석 결과나 기존 연결 상태를 들고 있고 upstream 컨테이너가 교체되는 배포 순간에는 502가 날 수 있다. |
+| Compose 서비스명을 써도 nginx를 재시작하지 않으면 502가 날 수 있는가? | 가능성이 있다. 설정 파일은 서비스명이지만 Nginx 로그에는 실제 연결 대상 IP가 찍히며, Nginx는 실행 중 해석/연결 상태가 배포 직후 컨테이너 교체와 어긋날 수 있다. |
+| smoke test가 false negative를 만들 수 있는가? | 가능성이 높다. 현재 smoke test는 nginx health만 기다린 뒤 upstream 요청은 1회 실패로 pipeline을 실패 처리한다. |
+| 현재 스크립트에 문제가 발생할 만한 구조가 있는가? | 있다. `deploy.sh`는 nginx를 유지할 수 있고, `smoke-test.sh`는 upstream 안정화 retry가 부족하다. |
+| 발표 전 큰 구조 변경 없이 어디를 볼 것인가? | nginx 강제 재생성 또는 재시작, upstream smoke retry, 실패 시 로그 수집 강화만 최소 범위로 검토한다. |
+
+#### 추천 수정 후보
+
+발표 전이므로 GHCR pull 배포, blue/green, 별도 reverse proxy 재설계는 하지 않는다. 기존 Jenkins 기반 VM 빌드와 Compose 배포를 유지하면서 아래 순서로 최소 수정한다.
+
+| 우선순위 | 후보 | 내용 | 장점 | 주의점 |
+| --- | --- | --- | --- | --- |
+| 1 | smoke test retry 보강 | `/`, `/api/dashboard/summary`, 필요 시 `/ws` 확인을 여러 번 재시도하고 성공하면 통과 | false negative를 줄임 | 실제 장애를 너무 오래 숨기지 않도록 최대 대기 시간을 제한 |
+| 2 | deploy 후 nginx 재시작 또는 재생성 | frontend/backend 재생성 뒤 `nginx`를 `restart`하거나 `up -d --force-recreate nginx` | Nginx가 Docker DNS/upstream 상태를 다시 잡게 함 | 아주 짧은 프록시 중단이 생길 수 있음 |
+| 3 | nginx 내부 smoke를 upstream 준비 확인으로 확장 | nginx 컨테이너에서 `frontend:3000`, `backend:8000` 직접 접근도 확인 | Nginx 자체 문제와 upstream 앱 준비 문제를 분리 | Nginx 이미지에 사용 가능한 도구가 `wget` 중심임 |
+| 4 | 실패 로그 강화 | smoke 실패 시 nginx/backend/frontend 최근 로그와 nginx mount 설정을 출력 | 다음 실패 원인 판단이 쉬움 | 로그가 길어질 수 있어 tail 제한 필요 |
+| 보류 | Nginx 동적 DNS resolver 구성 | `resolver 127.0.0.11`와 variable proxy 등으로 런타임 DNS 재해석 | 장기적으로 컨테이너 IP 변경에 강함 | Nginx 설정 복잡도가 올라가므로 발표 전 최소 수정으로는 보류 |
+
+#### 1차 추천 방향
+
+가장 현실적인 1차 수정은 아래 조합이다.
+
+```text
+1. deploy.sh에서 compose up 후 nginx를 명시적으로 재시작 또는 재생성한다.
+2. smoke-test.sh에서 nginx health만 보지 않고 /, /api/dashboard/summary를 retry한다.
+3. 각 retry 실패 시 바로 실패하지 않고 짧게 대기한다.
+4. 최종 실패 시 nginx/backend/frontend 로그와 현재 nginx mount 정보를 출력한다.
+```
+
+이 방향은 배포 구조를 바꾸지 않고, 기존 VM 빌드·Compose·Jenkins 흐름 안에서 배포 직후 502 타이밍 문제를 줄이는 접근이다.
+
+#### 수정 전 확인할 사항
+
+| 확인 항목 | 추천 |
+| --- | --- |
+| nginx 처리 방식 | 발표 전에는 `restart nginx` 또는 `up -d --force-recreate nginx` 중 하나만 선택한다. 더 확실한 쪽은 force recreate다. |
+| smoke retry 시간 | 총 60초 안팎으로 제한한다. 예: 12회 x 5초 또는 20회 x 3초 |
+| WebSocket smoke 포함 여부 | 발표 전 최소 수정에서는 REST까지 먼저 안정화하고, 여유가 있으면 `/ws/drains/status` handshake 확인을 추가한다. |
+| Docker 정리 | dangling image/build cache 정리는 별도 maintenance로 분리하고, 이번 502 직접 수정과 섞지 않는다. |
+
 ## 9. 구현 후 기록할 내용
 
 구현 후 step 문서에는 아래 내용을 남긴다.
