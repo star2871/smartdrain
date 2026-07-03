@@ -175,12 +175,18 @@
     min-height: 100dvh;
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
+    user-select: none;
   }
   html {
     @apply font-sans;
     min-height: 100%;
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+  input,
+  textarea,
+  [contenteditable="true"] {
+    user-select: text;
   }
 }
 

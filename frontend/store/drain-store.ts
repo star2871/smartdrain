@@ -9,6 +9,7 @@ import { URGENT_ALERT_POLICY } from "@/lib/urgent-alert-policy";
 export type UrgentDrainAlert = {
     drainId: string;
     facilityName?: string;
+    riskLevel: DrainStatusUpdatedEventDto["payload"]["riskLevel"];
     message: string;
     updatedAt: string;
     read: boolean;
@@ -25,6 +26,7 @@ type DrainStore = {
     yoloEventsByDrainId: Record<string, YoloResultUpdatedEventDto>;
     xgboostEventsByDrainId: Record<string, XgboostResultUpdatedEventDto>;
     urgentAlerts: UrgentDrainAlert[];
+    readUrgentAlerts: UrgentDrainAlert[];
     selectDrain: (id: string | null) => void;
     setDetailPanelOpen: (open: boolean) => void;
     setSocketStatus: (status: DrainSocketStatus) => void;
@@ -36,8 +38,8 @@ type DrainStore = {
         event: DrainStatusUpdatedEventDto,
         facilityName?: string,
     ) => void;
-    markUrgentAlertRead: (drainId: string) => void;
-    markAllUrgentAlertsRead: () => void;
+    dismissUrgentAlert: (drainId: string) => void;
+    clearUrgentAlerts: () => void;
 };
 
 export const useDrainStore = create<DrainStore>((set) => ({
@@ -50,6 +52,7 @@ export const useDrainStore = create<DrainStore>((set) => ({
     yoloEventsByDrainId: {},
     xgboostEventsByDrainId: {},
     urgentAlerts: [],
+    readUrgentAlerts: [],
     selectDrain: (selectedDrainId) =>
         set({ selectedDrainId, detailPanelOpen: Boolean(selectedDrainId) }),
     setDetailPanelOpen: (detailPanelOpen) => set({ detailPanelOpen }),
@@ -74,7 +77,8 @@ export const useDrainStore = create<DrainStore>((set) => ({
             const alert: UrgentDrainAlert = {
                 drainId: event.payload.drainId,
                 facilityName,
-                message: event.payload.finalDecision ?? "즉시 현장 확인이 필요합니다.",
+                riskLevel: event.payload.riskLevel,
+                message: createUrgentAlertMessage(event),
                 updatedAt: event.payload.updatedAt,
                 read: false,
             };
@@ -84,8 +88,14 @@ export const useDrainStore = create<DrainStore>((set) => ({
 
             if (existingAlert) {
                 return {
-                    urgentAlerts: state.urgentAlerts.map((item) =>
-                        item.drainId === alert.drainId ? { ...item, ...alert } : item,
+                    urgentAlerts: [
+                        alert,
+                        ...state.urgentAlerts.filter(
+                            (item) => item.drainId !== alert.drainId,
+                        ),
+                    ].slice(0, URGENT_ALERT_POLICY.maxVisibleAlerts),
+                    readUrgentAlerts: state.readUrgentAlerts.filter(
+                        (item) => item.drainId !== alert.drainId,
                     ),
                 };
             }
@@ -95,19 +105,57 @@ export const useDrainStore = create<DrainStore>((set) => ({
                     0,
                     URGENT_ALERT_POLICY.maxVisibleAlerts,
                 ),
+                readUrgentAlerts: state.readUrgentAlerts.filter(
+                    (item) => item.drainId !== alert.drainId,
+                ),
             };
         }),
-    markUrgentAlertRead: (drainId) =>
+    dismissUrgentAlert: (drainId) =>
+        set((state) => {
+            const dismissedAlert = state.urgentAlerts.find(
+                (alert) => alert.drainId === drainId,
+            );
+            return {
+                urgentAlerts: state.urgentAlerts.filter(
+                    (alert) => alert.drainId !== drainId,
+                ),
+                readUrgentAlerts: dismissedAlert
+                    ? upsertReadAlert(state.readUrgentAlerts, dismissedAlert)
+                    : state.readUrgentAlerts,
+            };
+        }),
+    clearUrgentAlerts: () =>
         set((state) => ({
-            urgentAlerts: state.urgentAlerts.map((alert) =>
-                alert.drainId === drainId ? { ...alert, read: true } : alert,
+            urgentAlerts: [],
+            readUrgentAlerts: state.urgentAlerts.reduce(
+                (items, alert) => upsertReadAlert(items, alert),
+                state.readUrgentAlerts,
             ),
         })),
-    markAllUrgentAlertsRead: () =>
-        set((state) => ({
-            urgentAlerts: state.urgentAlerts.map((alert) => ({
-                ...alert,
-                read: true,
-            })),
-        })),
 }));
+
+function upsertReadAlert(
+    readAlerts: UrgentDrainAlert[],
+    alert: UrgentDrainAlert,
+) {
+    return [
+        { ...alert, read: true },
+        ...readAlerts.filter((item) => item.drainId !== alert.drainId),
+    ].slice(0, 10);
+}
+
+function createUrgentAlertMessage(event: DrainStatusUpdatedEventDto) {
+    const { drainId, riskLevel, waterLevelCm, obstructionRatio } = event.payload;
+    if (riskLevel === "unknown") {
+        return `${drainId}의 영상 분석 상태를 확인할 수 없습니다. 센서값을 함께 확인하세요.`;
+    }
+
+    const details = [
+        typeof waterLevelCm === "number" ? `수위 ${waterLevelCm.toFixed(1)}cm` : null,
+        typeof obstructionRatio === "number" ? `막힘률 ${Math.round(obstructionRatio * 100)}%` : null,
+    ].filter(Boolean);
+
+    return details.length > 0
+        ? `${drainId}이 위험 상태입니다. ${details.join(", ")}`
+        : `${drainId}이 위험 상태입니다. 즉시 현장 확인이 필요합니다.`;
+}

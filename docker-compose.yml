@@ -45,6 +45,16 @@ services:
       ANALYSIS_SCHEDULER_INITIAL_DELAY_SECONDS: ${COMPOSE_ANALYSIS_SCHEDULER_INITIAL_DELAY_SECONDS:-60}
       ANALYSIS_SENSOR_MAX_AGE_SECONDS: ${COMPOSE_ANALYSIS_SENSOR_MAX_AGE_SECONDS:-300}
       ANALYSIS_JOB_TIMEOUT_SECONDS: ${COMPOSE_ANALYSIS_JOB_TIMEOUT_SECONDS:-600}
+      DEMO_SIMULATOR_ENABLED: ${COMPOSE_DEMO_SIMULATOR_ENABLED:-false}
+      DEMO_SIMULATOR_MODE: ${COMPOSE_DEMO_SIMULATOR_MODE:-direct}
+      DEMO_SIMULATOR_INTERVAL_SECONDS: ${COMPOSE_DEMO_SIMULATOR_INTERVAL_SECONDS:-30}
+      DEMO_SIMULATOR_START_DELAY_SECONDS: ${COMPOSE_DEMO_SIMULATOR_START_DELAY_SECONDS:-10}
+      DEMO_SIMULATOR_TARGET_DRAIN_CODE: ${COMPOSE_DEMO_SIMULATOR_TARGET_DRAIN_CODE:-DR-003}
+      DEMO_SIMULATOR_AUTO_START: ${COMPOSE_DEMO_SIMULATOR_AUTO_START:-false}
+      DEMO_SIMULATOR_RANDOMIZE: ${COMPOSE_DEMO_SIMULATOR_RANDOMIZE:-true}
+      DEMO_MANUAL_DEFAULT_WATER_LEVEL_CM: ${COMPOSE_DEMO_MANUAL_DEFAULT_WATER_LEVEL_CM:-30}
+      DEMO_MANUAL_DEFAULT_FLOW_VELOCITY_MPS: ${COMPOSE_DEMO_MANUAL_DEFAULT_FLOW_VELOCITY_MPS:-0.8}
+      DEMO_CONTROL_TOKEN: ${DEMO_CONTROL_TOKEN:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -77,6 +87,7 @@ services:
         fi
         exec "$@"
       - --
+    command: ["uvicorn", "ai_service.http.app:app", "--host", "0.0.0.0", "--port", "9000"]
     depends_on:
       backend:
         condition: service_healthy
@@ -113,7 +124,7 @@ services:
     ports:
       - "${NGINX_HTTP_PORT:-80}:80"
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${COMPOSE_NGINX_CONF_PATH:-./nginx/default.conf}:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ > /dev/null"]
       interval: 10s

@@ -17,4 +17,4 @@ test -d "$DEPLOY_DIR"
 test -w "$DEPLOY_DIR"
 test -S /var/run/docker.sock
 test -f "$DEPLOY_DIR/.env"
-test -f "$DEPLOY_DIR/nginx/default.conf"
+test -f "$DEPLOY_DIR/${COMPOSE_NGINX_CONF_PATH:-./nginx/default.conf}"

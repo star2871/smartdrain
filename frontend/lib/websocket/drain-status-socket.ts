@@ -187,29 +187,40 @@ function isYoloStatus(value: unknown) {
 
 function getDrainStatusSocketUrl() {
     const explicitUrl = process.env.NEXT_PUBLIC_WS_URL;
-    if (explicitUrl) return withDrainStatusPath(explicitUrl);
+    if (explicitUrl) return toDrainStatusSocketUrl(explicitUrl);
 
     const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
     if (apiBaseUrl === undefined) return null;
 
-    if (apiBaseUrl === "") {
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        return `${protocol}//${window.location.host}${DRAIN_STATUS_SOCKET_PATH}`;
-    }
-
-    if (apiBaseUrl.startsWith("/")) {
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        return `${protocol}//${window.location.host}${DRAIN_STATUS_SOCKET_PATH}`;
-    }
-
-    return withDrainStatusPath(
-        apiBaseUrl
-            .replace(/^http:\/\//, "ws://")
-            .replace(/^https:\/\//, "wss://"),
-    );
+    return toDrainStatusSocketUrl(apiBaseUrl);
 }
 
-function withDrainStatusPath(url: string) {
-    if (url.includes(DRAIN_STATUS_SOCKET_PATH)) return url;
-    return `${url.replace(/\/$/, "")}${DRAIN_STATUS_SOCKET_PATH}`;
+function toDrainStatusSocketUrl(value: string) {
+    const trimmedValue = value.trim();
+    if (!trimmedValue || trimmedValue.startsWith("/")) {
+        return getSameOriginDrainStatusSocketUrl();
+    }
+
+    try {
+        const url = new URL(trimmedValue);
+        if (url.protocol === "http:") {
+            url.protocol = "ws:";
+        } else if (url.protocol === "https:") {
+            url.protocol = "wss:";
+        } else if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+            return null;
+        }
+
+        url.pathname = DRAIN_STATUS_SOCKET_PATH;
+        url.search = "";
+        url.hash = "";
+        return url.href;
+    } catch {
+        return null;
+    }
+}
+
+function getSameOriginDrainStatusSocketUrl() {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${window.location.host}${DRAIN_STATUS_SOCKET_PATH}`;
 }

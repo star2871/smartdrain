@@ -25,6 +25,10 @@ type MapCenter = {
 };
 
 type KakaoLoaderOptions = Parameters<typeof useKakaoLoader>[0];
+type DrainWithCoordinate = DrainFacility & {
+  latitude: number;
+  longitude: number;
+};
 
 const DEFAULT_CENTER: MapCenter = {
   lat: 37.4979,
@@ -62,12 +66,7 @@ export function RiskMap({
     () => validDrains.find((drain) => drain.id === selectedId),
     [selectedId, validDrains],
   );
-  const legendCounts = {
-    danger: drains.filter((drain) => drain.status === "danger").length,
-    caution: drains.filter((drain) => drain.status === "caution").length,
-    good: drains.filter((drain) => drain.status === "good").length,
-    unknown: drains.filter((drain) => drain.status === "unknown").length,
-  };
+  const legendCounts = useMemo(() => getLegendCounts(drains), [drains]);
   const fallbackReason = getFallbackReason({
     appKey,
     validCount: validDrains.length,
@@ -116,8 +115,8 @@ function KakaoRiskMap({
 }: {
   appKey: string;
   drains: DrainFacility[];
-  validDrains: DrainFacility[];
-  selectedDrain?: DrainFacility;
+  validDrains: DrainWithCoordinate[];
+  selectedDrain?: DrainWithCoordinate;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   labelLocation?: string;
@@ -134,20 +133,24 @@ function KakaoRiskMap({
     ? drainToCenter(selectedDrain)
     : getMapCenter(validDrains);
   const shouldClusterMarkers = validDrains.length >= MARKER_CLUSTER_THRESHOLD;
-  const markers = validDrains.map((drain) => (
-    <MapMarker
-      key={drain.id}
-      position={drainToCenter(drain)}
-      image={getMarkerImage({
-        status: drain.status,
-        selected: drain.id === selectedId,
-        alt: `${STATUS_META[drain.status].label} 시설 마커`,
-      })}
-      title={`${drain.id} ${drain.road}`}
-      zIndex={drain.id === selectedId ? 20 : 10}
-      onClick={() => onSelect?.(drain.id)}
-    />
-  ));
+  const markers = useMemo(
+    () =>
+      validDrains.map((drain) => (
+        <MapMarker
+          key={drain.id}
+          position={drainToCenter(drain)}
+          image={getMarkerImage({
+            status: drain.status,
+            selected: drain.id === selectedId,
+            alt: `${STATUS_META[drain.status].label} 시설 마커`,
+          })}
+          title={`${drain.id} ${drain.road}`}
+          zIndex={drain.id === selectedId ? 20 : 10}
+          onClick={() => onSelect?.(drain.id)}
+        />
+      )),
+    [onSelect, selectedId, validDrains],
+  );
 
   if (error) {
     return (
@@ -406,7 +409,11 @@ function MockStreetBackground() {
   );
 }
 
-function hasValidCoordinate(drain: DrainFacility) {
+function hasValidCoordinate(drain: DrainFacility): drain is DrainWithCoordinate {
+  if (typeof drain.latitude !== "number" || typeof drain.longitude !== "number") {
+    return false;
+  }
+
   return (
     Number.isFinite(drain.latitude) &&
     Number.isFinite(drain.longitude) &&
@@ -415,14 +422,14 @@ function hasValidCoordinate(drain: DrainFacility) {
   );
 }
 
-function drainToCenter(drain: DrainFacility): MapCenter {
+function drainToCenter(drain: DrainWithCoordinate): MapCenter {
   return {
     lat: drain.latitude,
     lng: drain.longitude,
   };
 }
 
-function getMapCenter(drains: DrainFacility[]): MapCenter {
+function getMapCenter(drains: DrainWithCoordinate[]): MapCenter {
   if (drains.length === 0) return DEFAULT_CENTER;
 
   const total = drains.reduce(
@@ -437,6 +444,21 @@ function getMapCenter(drains: DrainFacility[]): MapCenter {
     lat: total.lat / drains.length,
     lng: total.lng / drains.length,
   };
+}
+
+function getLegendCounts(drains: DrainFacility[]): Record<RiskLevel, number> {
+  return drains.reduce<Record<RiskLevel, number>>(
+    (counts, drain) => {
+      counts[drain.status] += 1;
+      return counts;
+    },
+    {
+      danger: 0,
+      caution: 0,
+      good: 0,
+      unknown: 0,
+    },
+  );
 }
 
 function getMarkerImage({

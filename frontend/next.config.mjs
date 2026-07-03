@@ -1,4 +1,9 @@
+import bundleAnalyzer from "@next/bundle-analyzer";
+
 const composePublicEnv = {};
+const withBundleAnalyzer = bundleAnalyzer({
+  enabled: process.env.ANALYZE === "true",
+});
 
 if (process.env.COMPOSE_FRONTEND_API_BASE_URL !== undefined) {
   composePublicEnv.NEXT_PUBLIC_API_BASE_URL =
@@ -14,12 +19,9 @@ if (process.env.COMPOSE_FRONTEND_KAKAO_MAP_APP_KEY !== undefined) {
 const nextConfig = {
   output: "standalone",
   env: composePublicEnv,
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   images: {
     unoptimized: true,
   },
 }
 
-export default nextConfig
+export default withBundleAnalyzer(nextConfig);

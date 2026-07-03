@@ -7,6 +7,7 @@ import { PLACEHOLDER_IMAGES } from "@/lib/placeholders";
 import { FallbackImage } from "@/components/fallback-image";
 import { ImagePreviewDialog } from "@/components/image-preview-dialog";
 import type { YoloStatus } from "@/lib/api/types";
+import { formatDateTimeForDisplay } from "@/lib/date-format";
 
 export type CctvSnapshot = {
     id?: number;
@@ -48,7 +49,7 @@ export const CctvSnapshotCard = memo(function CctvSnapshotCard({
                     CCTV (상단뷰)
                 </h2>
                 <span className="text-xs text-slate-400">
-                    최근 캡처 · {current.capturedAt}
+                    최근 캡처 · {formatDateTimeForDisplay(current.capturedAt)}
                 </span>
             </div>
 
@@ -58,7 +59,7 @@ export const CctvSnapshotCard = memo(function CctvSnapshotCard({
                     src={current.imageUrl}
                     fallbackSrc={PLACEHOLDER_IMAGES.cctv}
                     alt={`${locationName} 빗물받이 상단뷰 CCTV 스냅샷`}
-                    className="size-full object-cover grayscale"
+                    className="size-full object-cover"
                 />
                 <button
                     type="button"
@@ -114,7 +115,7 @@ export const CctvSnapshotCard = memo(function CctvSnapshotCard({
                                 src={snapshot.imageUrl}
                                 fallbackSrc={PLACEHOLDER_IMAGES.thumbnail}
                                 alt=""
-                                className="size-full object-cover grayscale"
+                                className="size-full object-cover"
                             />
                         </button>
                     ))}

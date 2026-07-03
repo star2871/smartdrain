@@ -4,8 +4,10 @@ set -eu
 cd "${DEPLOY_DIR:?DEPLOY_DIR is required}"
 
 docker compose -p "$COMPOSE_PROJECT_NAME" config --quiet
+nginx_conf_path="${COMPOSE_NGINX_CONF_PATH:-./nginx/default.conf}"
+nginx_conf_abs="$(cd "$DEPLOY_DIR" && readlink -f "$nginx_conf_path")"
 compose_config="$(docker compose -p "$COMPOSE_PROJECT_NAME" config)"
-printf '%s\n' "$compose_config" | grep -F "source: $DEPLOY_DIR/nginx/default.conf" >/dev/null
+printf '%s\n' "$compose_config" | grep -F "source: $nginx_conf_abs" >/dev/null
 printf '%s\n' "$compose_config" | grep -F 'target: /etc/nginx/conf.d/default.conf' >/dev/null
 printf '%s\n' "$compose_config" | grep -F 'read_only: true' >/dev/null
 docker build --target lint --file frontend/Dockerfile .

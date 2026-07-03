@@ -24,6 +24,7 @@ pipeline {
         DEPLOY_DIR = '/home/yp/apps/smart-drain'
         DEPLOY_BRANCH = 'dev'
         COMPOSE_PROJECT_NAME = 'smartdrain-dev'
+        COMPOSE_NGINX_CONF_PATH = './nginx/default.dev.conf'
     }
 
     stages {

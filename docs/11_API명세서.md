@@ -1,5 +1,14 @@
 # SmartDrain MVP API 통합 명세서
 
+> 이 문서는 처음 작성한 API 초안을 바탕으로 합니다. 아래 표는 **문서에 적힌 예전 경로**와 **현재 코드에서 실제 사용하는 경로**의 차이입니다. API를 연동할 때는 표의 “현재 구현”을 먼저 확인하세요. 전체 구현 상태는 [14 구현 현황 및 검증 결과](14_구현현황_및_검증결과.md)를 참고합니다.
+
+| 초안 표기 | 현재 구현 | 처리 |
+| --- | --- | --- |
+| `GET /api/drains/{id}/sensors` | `GET /api/drains/{id}/sensor-data` | 구현 경로 사용 |
+| `GET /api/drains/{id}/analysis/latest` | 별도 endpoint 미구현 | 상세 화면은 현재 frontend helper의 기존 경로를 사용하나 backend 계약 정합화가 필요 |
+| 최신 위험 결과 | `GET /api/drains/{id}/risk/latest` | 구현 경로 사용 |
+| `NEXT_PUBLIC_API_BASE_URL` | same-origin은 빈 값, 별도 backend 개발에서만 설정 | `/api` 중복을 피함 |
+
 | 항목 | 내용 |
 |---|---|
 | 문서명 | SmartDrain MVP API 통합 명세서 |

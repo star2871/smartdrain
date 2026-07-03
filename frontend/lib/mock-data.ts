@@ -18,8 +18,8 @@ export interface DrainFacility {
     latestImageUrl?: string | null;
     latestImageCapturedAt?: string | null;
     judgement: string; // 판정 결과
-    latitude: number;
-    longitude: number;
+    latitude: number | null;
+    longitude: number | null;
     // normalized position on the mock map (0-100)
     x: number;
     y: number;

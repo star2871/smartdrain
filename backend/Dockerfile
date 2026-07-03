@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY alembic.ini ./
 COPY backend/ ./backend/
+COPY mock_data/ ./mock_data/
 
 RUN useradd --create-home appuser \
     && chown -R appuser:appuser /app

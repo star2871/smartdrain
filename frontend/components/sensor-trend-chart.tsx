@@ -19,15 +19,17 @@ type SensorSummary = {
     currentFlow: number | null;
 };
 
+export type SensorTrendChartProps = {
+    points: SensorPoint[];
+    summary: SensorSummary;
+    isFallback?: boolean;
+};
+
 export function SensorTrendChart({
     points,
     summary,
     isFallback = false,
-}: {
-    points: SensorPoint[];
-    summary: SensorSummary;
-    isFallback?: boolean;
-}) {
+}: SensorTrendChartProps) {
     const hasSensorPoints = points.length > 0;
     const isSinglePoint = points.length === 1;
     const waterLevelDomain = getAxisDomain(
@@ -64,7 +66,7 @@ export function SensorTrendChart({
                     image={PLACEHOLDER_IMAGES.chart}
                     title="실시간 센서 데이터 연결 대기"
                     description="백엔드 센서 이력이 도착하면 수위와 유속 차트가 표시됩니다."
-                    statusLabel="API 데이터 대기"
+                    statusLabel="데이터 수신 대기"
                     className="mt-2 h-[280px]"
                 />
             ) : !hasSensorPoints ? (

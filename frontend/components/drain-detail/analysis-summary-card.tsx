@@ -8,6 +8,7 @@ import {
 import { MetricProgress } from "@/components/metric-progress";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDateTimeForDisplay } from "@/lib/date-format";
+import { formatFinalDecisionLabel } from "@/lib/final-decision-label";
 import type { DrainFacility, RiskStatus } from "@/lib/mock-data";
 import { STATUS_META } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
@@ -129,7 +130,7 @@ function FinalDecisionTile({
                 최종 판단
             </div>
             <p className={cn("mt-2 break-keep text-sm font-bold leading-5", meta.text)}>
-                {decision}
+                {formatFinalDecisionLabel(decision)}
             </p>
             <p className="mt-1 truncate text-xs text-slate-400 dark:text-slate-500" title={formatDateTimeForDisplay(evaluatedAt)}>
                 {formatDateTimeForDisplay(evaluatedAt)}

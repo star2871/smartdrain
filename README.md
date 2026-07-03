@@ -1,245 +1,486 @@
+<div align="center">
+
 # SmartDrain
 
-> 지능형 도시 침수 관리 및 모니터링 시스템
+### 이미지·센서 기반 빗물받이 위험 관제 시스템
 
-SmartDrain은 CCTV 스냅샷과 모의 수위·유속 데이터를 바탕으로 빗물받이의 위험도를 판단하고, 관리자가 지도 기반 대시보드에서 상태와 분석 이력을 확인하는 프로젝트입니다.
+[![Status](https://img.shields.io/badge/status-MVP%20Complete-0F766E?style=flat-square)](#프로젝트-상태)
+[![Branch](https://img.shields.io/badge/branch-main-181717?style=flat-square&logo=github)](#프로젝트-상태)
+[![Next.js](https://img.shields.io/badge/Next.js-16.2.6-000000?style=flat-square&logo=nextdotjs)](#기술-스택)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Python-009688?style=flat-square&logo=fastapi)](#기술-스택)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql)](#기술-스택)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker)](#실행-방법)
 
-## 생성형 AI 활용 고지
+**SmartDrain**은 빗물받이 이미지와 수위·유속 데이터를 결합해 시설의 위험 상태를 분석하고,  
+관리자가 지도 기반 대시보드에서 전체 현황과 분석 이력을 확인할 수 있도록 구현한 통합 MVP입니다.
 
-- 코드 생성, Docker/Nginx 설정, 문서 작성은 생성형 AI 도구의 보조를 받아 작성했습니다.
-- 모든 결과물은 팀원이 요구사항, 보안, 실행 결과를 검토하고 책임지고 반영했습니다.
-- 비밀값, 인프라 비용, 배포 권한, 실제 운영 장애 대응은 생성형 도구의 제안만으로 결정하지 않습니다.
+**MVP 개발 완료 · `main` 브랜치 병합 완료**
 
-## 프로젝트 한눈에 보기
+</div>
+
+---
+
+## 프로젝트 소개
+
+도시의 빗물받이는 낙엽, 쓰레기, 토사 등으로 막힐 경우 배수 성능이 저하되고 침수 위험이 높아질 수 있습니다. 하지만 관리 대상 시설이 많으면 현장 점검만으로 모든 상태를 빠르게 비교하고 우선순위를 정하기 어렵습니다.
+
+SmartDrain은 다음 데이터를 하나의 흐름으로 연결합니다.
+
+1. 빗물받이 이미지
+2. 수위·유속 센서값
+3. YOLO·OpenCV 이미지 분석
+4. XGBoost 위험 등급 분류
+5. PostgreSQL 결과 저장
+6. REST API·WebSocket 기반 대시보드 갱신
+
+> 현재 MVP는 **시설별 샘플 이미지와 모의 센서 데이터**를 사용합니다. 실제 CCTV 스트림과 IoT 센서 연동은 운영 확장 범위입니다.
+
+---
+
+## 주요 화면
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="frontend/docs/images/main-page.png" alt="SmartDrain 메인 대시보드" width="100%" />
+      <br />
+      <strong>메인 대시보드</strong><br />
+      시설 위치, 상태별 통계, 위험 시설 우선순위
+    </td>
+    <td width="50%" align="center">
+      <img src="frontend/docs/images/detail-page.png" alt="SmartDrain 시설 상세 화면" width="100%" />
+      <br />
+      <strong>시설 상세 화면</strong><br />
+      CCTV 이미지, 센서 추세, AI 결과, 위험 이력
+    </td>
+  </tr>
+</table>
+
+---
+
+## 핵심 기능
+
+### 지도 기반 통합 관제
+
+- Kakao Map을 이용한 빗물받이 위치 표시
+- `양호`, `주의`, `위험`, `판단불가` 상태별 마커 구분
+- 위험 시설 우선 목록과 선택 시설 상세 패널 제공
+- 전체·상태별 시설 통계 제공
+
+### 시설 상세 모니터링
+
+- 시설 위치와 기본 정보
+- CCTV 스냅샷 및 촬영 시각
+- 수위·유속 시계열 차트
+- YOLO 막힘 분석 결과
+- XGBoost 위험 등급과 판단 결과
+- 과거 위험 이력 조회
+
+### 비동기 AI 분석
+
+- Backend가 `AnalysisJob`을 먼저 생성한 뒤 AI Service에 분석 요청
+- AI Service가 YOLO/OpenCV와 XGBoost를 순차 실행
+- YOLO 결과와 XGBoost 결과를 별도 callback으로 저장
+- 중복 callback 멱등 처리
+- 분석 상태를 `processing → yolo_completed → completed/failed`로 추적
+
+### 실시간 상태 동기화
+
+- WebSocket을 이용한 시설 상태·AI 결과 실시간 반영
+- 연결 종료 시 자동 재연결
+- 재연결 후 TanStack Query 캐시 재검증
+- Zustand와 Query Cache를 함께 갱신해 화면 간 상태 동기화
+
+### 운영 환경 구성
+
+- Nginx를 이용한 `/`, `/api`, `/ws` same-origin 구성
+- PostgreSQL health check 이후 Alembic migration 자동 실행
+- Docker Compose 기반 개발·운영 환경 분리
+- Jenkins 기반 정적 검사, AI 테스트, 배포, smoke test 파이프라인
+
+---
+
+## 시스템 아키텍처
+
+```mermaid
+flowchart LR
+    U[관리자 브라우저]
+    N[Nginx]
+    F[Next.js Frontend]
+    B[FastAPI Backend]
+    DB[(PostgreSQL)]
+    AI[AI Service]
+    Y[YOLO + OpenCV]
+    X[XGBoost]
+
+    U --> N
+    N -->|/| F
+    N -->|/api, /ws| B
+
+    B -->|시설·센서·분석 결과| DB
+    B -->|비동기 분석 요청| AI
+    AI --> Y
+    Y --> X
+    AI -->|YOLO callback| B
+    AI -->|XGBoost callback| B
+    B -->|WebSocket 이벤트| F
+```
+
+### 분석 처리 흐름
 
 ```text
-CCTV 스냅샷 + 센서 모의 데이터
+최신 센서 데이터 조회
         ↓
-Backend ──→ AI Service ──→ Backend callback
-   ↓
-PostgreSQL → WebSocket / REST API → Next.js 관리자 대시보드
+AnalysisJob 생성
+        ↓
+AI Service 분석 요청
+        ↓
+샘플 이미지 선택
+        ↓
+YOLO 객체 탐지 + OpenCV 막힘 영역 분석
+        ↓
+막힘률·신뢰도·수위·유속으로 XGBoost 추론
+        ↓
+Backend callback 및 PostgreSQL 저장
+        ↓
+시설 상태 갱신 + WebSocket broadcast
+        ↓
+메인·상세 화면 실시간 반영
 ```
 
-| 구성 요소     | 기술                         | 책임                                               |
-| ------------- | ---------------------------- | -------------------------------------------------- |
-| Frontend      | Next.js, React, TypeScript   | 지도 대시보드, 시설 상세, REST/WebSocket 상태 표시 |
-| Backend       | FastAPI, SQLAlchemy, Alembic | REST API, DB 저장, AI 요청, WebSocket 이벤트       |
-| AI Service    | FastAPI                      | 비동기 분석과 backend callback 계약                |
-| Database      | PostgreSQL                   | 시설·센서·분석 결과 영속화                         |
-| Reverse proxy | Nginx                        | 웹 화면, `/api`, `/ws` 단일 진입점                 |
+---
 
-## 저장소 구조
+## AI 분석 방식
+
+### YOLO + OpenCV
+
+YOLO는 빗물받이 영역과 이물질 객체를 검출하고, OpenCV는 HSV 색상 영역·CLAHE·형태학 연산으로 토사와 비정형 오염 영역을 보완합니다.
+
+주요 출력값:
+
+- `obstruction_ratio`: 막힘 비율
+- `confidence_score`: 탐지 신뢰도
+- `drain_box`, `debris_boxes`: 검출 영역
+- `status`: 이미지 분석 상태
+
+### XGBoost
+
+YOLO/OpenCV 결과와 센서값을 다음 순서로 입력합니다.
+
+1. `obstruction_ratio`
+2. `confidence_score`
+3. `water_level`
+4. `flow_velocity`
+
+최종 등급:
+
+- `good`
+- `caution`
+- `danger`
+- `unknown`
+
+> API의 `risk_score`는 위험도의 절대 크기라기보다 **선택된 위험 등급에 대한 모델 확률**을 의미합니다.
+
+### 모델 파일 정책
+
+- XGBoost 모델 JSON은 저장소에서 추적합니다.
+- YOLO `best.pt`는 용량과 배포 환경을 고려해 Git 외부에서 주입합니다.
+- `SMARTDRAIN_YOLO_MODEL_PATH`가 유효한 파일을 가리키지 않으면 AI Service는 시작하지 않습니다.
+
+---
+
+## 기술 스택
+
+| 영역        | 기술                                            |
+| ----------- | ----------------------------------------------- |
+| Frontend    | Next.js 16, React 19, TypeScript, Tailwind CSS  |
+| 상태·데이터 | TanStack Query, Zustand, Axios                  |
+| 지도·시각화 | Kakao Maps SDK, Recharts                        |
+| Backend     | FastAPI, SQLAlchemy, Alembic, Pydantic          |
+| Database    | PostgreSQL 16                                   |
+| AI          | Ultralytics YOLO, OpenCV, XGBoost, scikit-learn |
+| 실시간 통신 | WebSocket                                       |
+| Infra       | Docker Compose, Nginx                           |
+| CI/CD       | Jenkins                                         |
+
+---
+
+## 데이터 모델
+
+| 테이블            | 역할                              |
+| ----------------- | --------------------------------- |
+| `drains`          | 시설 기본 정보와 현재 상태        |
+| `sensor_data`     | 수위·유속 시계열 데이터           |
+| `yolo_results`    | 이미지 분석 결과                  |
+| `xgboost_results` | 최종 위험 등급과 판단 결과        |
+| `analysis_jobs`   | 비동기 분석 작업 상태와 오류 추적 |
+
+Alembic migration은 Compose의 `migrate` 서비스에서 자동 실행됩니다.
+
+---
+
+## 주요 API
+
+| Method | Path                                     | 설명                         |
+| ------ | ---------------------------------------- | ---------------------------- |
+| `GET`  | `/api/drains`                            | 시설 목록 조회               |
+| `GET`  | `/api/drains/{drain_id}`                 | 시설 상세 조회               |
+| `GET`  | `/api/dashboard/summary`                 | 대시보드 상태 요약           |
+| `GET`  | `/api/drains/{drain_id}/sensor-data`     | 센서 이력 조회               |
+| `GET`  | `/api/drains/{drain_id}/analysis/latest` | 최신 통합 분석 결과          |
+| `GET`  | `/api/drains/{drain_id}/risk-history`    | 위험 이력 조회               |
+| `POST` | `/api/sensor-data`                       | 센서 데이터 저장             |
+| `POST` | `/api/analysis/async-run`                | 비동기 AI 분석 시작          |
+| `POST` | `/api/ai-callback/yolo-result`           | YOLO 결과 callback           |
+| `POST` | `/api/ai-callback/xgboost-result`        | XGBoost 결과 callback        |
+| `WS`   | `/ws/drains/status`                      | 시설·분석 상태 실시간 이벤트 |
+
+개발 환경에서는 `http://localhost:8080/docs`에서 전체 Swagger 문서를 확인할 수 있습니다.
+
+---
+
+## 프로젝트 구조
 
 ```text
-frontend/       Next.js 관리자 화면과 frontend 문서
-backend/        FastAPI API와 Alembic migration
-ai_service/     AI 분석 API와 callback 처리
-nginx/          개발/운영 Nginx 설정
-docs/           프로젝트 정의와 아키텍처 문서
+smartdrain/
+├─ frontend/             # Next.js 관리자 대시보드
+│  ├─ app/               # App Router 페이지
+│  ├─ components/        # 지도·대시보드·상세 UI
+│  ├─ lib/               # API, Query, WebSocket, adapter
+│  └─ docs/              # Frontend 구현·테스트 기록
+├─ backend/              # FastAPI Backend
+│  ├─ app/models/        # SQLAlchemy 모델
+│  ├─ app/routers/       # REST·Callback·WebSocket API
+│  ├─ app/services/      # 분석·대시보드·스케줄러 로직
+│  └─ alembic/           # DB migration
+├─ ai_service/           # 비동기 AI 분석 서비스
+│  ├─ yolo/              # YOLO/OpenCV 분석
+│  ├─ xgboost/           # 특징 생성과 위험 등급 추론
+│  ├─ analysis/          # 전체 분석 orchestration
+│  └─ http/              # API와 Backend callback
+├─ ai-vision/            # 모델 학습·PoC·실험 코드
+├─ mock_data/            # 시설별 샘플 이미지
+├─ nginx/                # Reverse proxy 설정
+├─ docs/                 # 프로젝트 정의·요구사항·아키텍처
+├─ .jenkins/             # Jenkins 검증·배포 스크립트
+├─ docker-compose.yml
+└─ docker-compose.dev.yml
 ```
 
-## 빠른 시작: Docker 개발 환경
+---
 
-사전 조건: Docker Desktop 또는 Docker Engine + Compose v2
+## 실행 방법
+
+### 사전 요구사항
+
+- Docker Engine 또는 Docker Desktop
+- Docker Compose v2
+- Kakao Maps JavaScript 키
+- YOLO `best.pt` 모델 파일
+
+### 1. 환경변수 준비
+
+```bash
+cp .env.example .env
+```
+
+Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-### YOLO 모델 파일 준비
-
-AI 분석까지 실행하려면 Git에 포함하지 않는 `best.pt` 파일이 필요합니다. root `.env`의 `SMARTDRAIN_YOLO_MODEL_PATH`를 **존재하는 파일의 절대 경로**로 바꿉니다. Windows에서는 경로 구분자로 `/`를 사용하면 Compose에서 안전하게 처리됩니다.
+`.env`에서 최소 다음 값을 설정합니다.
 
 ```dotenv
-SMARTDRAIN_YOLO_MODEL_PATH=C:/smartdrain-data/models/best.pt
+POSTGRES_PASSWORD=change-your-password
+COMPOSE_DATABASE_URL=postgresql+psycopg://smartdrain:change-your-password@db:5432/smartdrain_db
+SMARTDRAIN_YOLO_MODEL_PATH=/absolute/path/to/best.pt
+COMPOSE_FRONTEND_KAKAO_MAP_APP_KEY=your-kakao-javascript-key
 ```
 
-모델은 읽기 전용으로 AI 컨테이너의 `/app/ai_service/model/best.pt`에 연결됩니다. 파일이 없거나, 일반 파일이 아니거나, 비어 있으면 `ai-service`는 다음 오류를 로그로 남기고 시작하지 않습니다. 모델 없이 분석 결과가 생성되는 상태를 허용하지 않기 위한 정책입니다.
+> 실제 비밀번호와 API 키는 Git에 커밋하지 않습니다.
 
-```text
-ERROR: YOLO model file is missing, not a regular file, or empty: /app/ai_service/model/best.pt
-Set SMARTDRAIN_YOLO_MODEL_PATH in the root .env to an existing best.pt file.
-```
+### 2. 개발 환경 실행
 
-확인 명령:
-
-```powershell
-$modelPath = (Get-Content .env | Where-Object { $_ -like 'SMARTDRAIN_YOLO_MODEL_PATH=*' } | Select-Object -First 1) -replace '^SMARTDRAIN_YOLO_MODEL_PATH='
-Test-Path -LiteralPath $modelPath -PathType Leaf
-```
-
-`True`가 나온 뒤에 Compose를 실행합니다. 모델이 아직 없다면 `COMPOSE_AI_SERVER_ENABLED=false`로 backend의 분석 요청을 명시적으로 비활성화할 수 있습니다. 이 경우에도 `ai-service`는 모델 누락 오류를 남기고 종료하지만, frontend·backend·DB의 개발 확인은 계속할 수 있습니다.
-
-개발 Compose는 `mock_data/ai_image_samples`를 AI 컨테이너에 읽기 전용으로 연결합니다. 샘플 이미지를 새로 만들거나 바꾸려면 호스트의 해당 폴더에서 관리하며, 컨테이너 내부에서 수정하지 않습니다.
-
-개발 Compose는 Hot Reload와 FastAPI 문서를 포함하며 Nginx의 `8080` 포트로 접속합니다.
-
-최초 실행 또는 의존성·Dockerfile 변경 시:
-
-```powershell
+```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
-이미 이미지가 생성된 이후 일반적으로 다시 실행할 때는 --build를 제외합니다.
+| 대상      | 주소                                   |
+| --------- | -------------------------------------- |
+| 대시보드  | `http://localhost:8080`                |
+| Swagger   | `http://localhost:8080/docs`           |
+| REST API  | `http://localhost:8080/api/...`        |
+| WebSocket | `ws://localhost:8080/ws/drains/status` |
 
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-```
+### 3. 샘플 데이터 생성
 
-소스 코드 수정은 Hot Reload로 반영되므로 이미지 재빌드가 필요하지 않습니다.
+서비스가 정상 기동된 뒤 최초 1회 실행합니다.
 
-AI Service의 의존성이나 Dockerfile이 변경된 경우에만 다음과 같이 해당 서비스만 다시 빌드합니다.
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build --no-deps ai-service
-```
-
-| 대상         | 주소                                   |
-| ------------ | -------------------------------------- |
-| 대시보드     | `http://localhost:8080`                |
-| FastAPI 문서 | `http://localhost:8080/docs`           |
-| REST API     | `http://localhost:8080/api/...`        |
-| WebSocket    | `ws://localhost:8080/ws/drains/status` |
-
-`migrate` 서비스는 DB migration을 한 번 실행하고 종료합니다. 정상 기동 후 개발용 목 데이터가 필요할 때만 아래 명령을 실행합니다.
-
-```powershell
+```bash
 docker compose --profile seed run --rm seed
 ```
 
-### Cloudflare Tunnel 및 same-origin
+### 4. 운영 기준 실행
 
-운영/개발 VM에서 Cloudflare Tunnel이 `http://127.0.0.1:8099`의 Nginx로 연결되고, 브라우저가 `https://smartdrain.healthq.store`로 접속하는 경우에도 frontend·REST API·WebSocket은 하나의 origin을 사용합니다.
-
-```text
-Browser https://smartdrain.healthq.store
-  → Cloudflare Tunnel
-  → 127.0.0.1:8099 (Nginx)
-       ├─ /       → frontend
-       ├─ /api/*  → backend
-       └─ /ws/*   → backend
-```
-
-이 구조에서는 frontend가 backend의 `localhost:8000` 또는 내부 IP를 직접 호출하면 안 됩니다. Compose frontend의 `COMPOSE_FRONTEND_API_BASE_URL`은 빈 값으로 유지합니다. 각 API helper가 이미 `/api/*` 경로를 포함하므로 `/api`를 설정하면 `/api/api/...`가 됩니다. WebSocket helper는 현재 페이지가 HTTPS이면 같은 host의 `wss://…/ws/drains/status`를 자동으로 사용합니다.
-
-same-origin 요청 자체는 CORS 대상이 아니지만, backend를 직접 호출하는 관리 도구 등을 허용해야 한다면 `COMPOSE_CORS_ORIGINS`에 해당 HTTPS origin을 JSON 배열로 설정합니다.
-
-```dotenv
-NGINX_HTTP_PORT=127.0.0.1:8099
-COMPOSE_CORS_ORIGINS=["https://smartdrain.healthq.store"]
-COMPOSE_FRONTEND_API_BASE_URL=
-```
-
-### 스케줄러 설정
-
-backend에는 센서 데이터를 기준으로 AI 분석 요청을 만드는 scheduler가 포함돼 있습니다. 로컬 개발 기본값은 예기치 않은 분석 요청을 막기 위해 비활성화(`false`)입니다. 필요한 경우 root `.env`에서 아래 값을 조정한 뒤 backend를 다시 만들거나 재시작합니다.
-
-```dotenv
-COMPOSE_ANALYSIS_SCHEDULER_ENABLED=true
-COMPOSE_ANALYSIS_SCHEDULER_INTERVAL_SECONDS=300
-COMPOSE_ANALYSIS_SCHEDULER_INITIAL_DELAY_SECONDS=60
-COMPOSE_ANALYSIS_SENSOR_MAX_AGE_SECONDS=300
-COMPOSE_ANALYSIS_JOB_TIMEOUT_SECONDS=600
-```
-
-| 변수 | 역할 |
-| --- | --- |
-| `COMPOSE_ANALYSIS_SCHEDULER_ENABLED` | backend 시작 시 scheduler 실행 여부 |
-| `COMPOSE_ANALYSIS_SCHEDULER_INTERVAL_SECONDS` | 분석 대상 탐색 주기 |
-| `COMPOSE_ANALYSIS_SCHEDULER_INITIAL_DELAY_SECONDS` | backend 시작 뒤 첫 탐색 전 대기 시간 |
-| `COMPOSE_ANALYSIS_SENSOR_MAX_AGE_SECONDS` | 분석 대상으로 인정할 센서 데이터의 최대 경과 시간 |
-| `COMPOSE_ANALYSIS_JOB_TIMEOUT_SECONDS` | 처리 중인 분석 job을 실패로 전환하는 timeout |
-
-운영 기준 Compose는 Nginx만 PC의 `80` 포트를 사용합니다. backend·AI·PostgreSQL 포트는 외부에 열지 않으며 `/docs`도 차단합니다.
-
-```powershell
+```bash
 docker compose up --build -d
 docker compose ps
 ```
 
-종료와 로그 확인 명령은 다음과 같습니다.
+운영 Compose에서는 Nginx만 외부 포트에 공개되며 Backend, AI Service, PostgreSQL은 내부 네트워크에서 통신합니다.
 
-```powershell
+### 종료
+
+```bash
 docker compose down
-docker compose logs -f nginx backend ai-service
 ```
 
-`docker compose down -v`는 PostgreSQL volume까지 삭제하므로, 데이터를 초기화할 때만 사용합니다.
+DB volume까지 삭제하려면 다음 명령을 사용합니다.
 
-## 개발과 운영 실행 방식
+```bash
+docker compose down -v
+```
 
-| 구분                       | 명령                                                                        | 공개 포트 | 특징                                              |
-| -------------------------- | --------------------------------------------------------------------------- | --------- | ------------------------------------------------- |
-| 개발 최초 실행·의존성 변경 | `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build` | `8080`    | 이미지 빌드, bind mount, Hot Reload               |
-| 개발 일반 실행             | `docker compose -f docker-compose.yml -f docker-compose.dev.yml up`         | `8080`    | 기존 이미지 재사용, 코드 수정 자동 반영           |
-| 운영 기준 검증             | `docker compose up --build -d`                                              | `80`      | production image, Nginx만 외부 공개, `/docs` 차단 |
+---
+
+## 환경변수
+
+| 변수                                          | 설명                           | 기본값                       |
+| --------------------------------------------- | ------------------------------ | ---------------------------- |
+| `SMARTDRAIN_YOLO_MODEL_PATH`                  | 호스트의 YOLO 모델 절대 경로   | `./ai_service/model/best.pt` |
+| `COMPOSE_FRONTEND_KAKAO_MAP_APP_KEY`          | Kakao Maps JavaScript 키       | 빈 값                        |
+| `COMPOSE_FRONTEND_API_BASE_URL`               | Frontend API base URL          | 빈 값, same-origin           |
+| `COMPOSE_DATABASE_URL`                        | Backend PostgreSQL 연결 문자열 | 로컬 기본값                  |
+| `COMPOSE_AI_SERVER_ENABLED`                   | Backend의 AI 요청 활성화       | `true`                       |
+| `COMPOSE_ANALYSIS_SCHEDULER_ENABLED`          | 자동 분석 scheduler 활성화     | `false`                      |
+| `COMPOSE_ANALYSIS_SCHEDULER_INTERVAL_SECONDS` | 분석 대상 탐색 주기            | `300`                        |
+| `COMPOSE_ANALYSIS_JOB_TIMEOUT_SECONDS`        | 분석 작업 timeout              | `600`                        |
+| `COMPOSE_CORS_ORIGINS`                        | Backend 직접 호출 허용 origin  | localhost 목록               |
+
+전체 설정은 [`.env.example`](.env.example)을 참고하세요.
+
+---
+
+## 테스트
+
+### AI Service
+
+```bash
+python -m pytest ai_service
+```
+
+`main` 병합 기준 검증 결과:
 
 ```text
-Browser → Nginx:80 → frontend:3000
-                    → backend:8000 (/api, /ws)
-backend → ai-service:9000 → backend callback
-backend → PostgreSQL:5432
+115 passed
 ```
 
-## 테스트와 확인 방법
+### Frontend
 
-테스트는 코드, Docker 이미지, 실행 환경을 나눠 확인합니다.
-
-| 단계                      | 개발 환경                                               | 운영 기준 환경                | 통과 기준                   |
-| ------------------------- | ------------------------------------------------------- | ----------------------------- | --------------------------- |
-| 정적 검사                 | `npm.cmd --prefix frontend run lint`                    | GitHub Actions에서 동일 실행  | 오류 0건                    |
-| Frontend production build | `npm.cmd --prefix frontend run build` 또는 Docker build | Docker/GitHub Actions build   | Next.js build 성공          |
-| AI 단위·계약 테스트       | `python -m pytest ai_service`                           | CI에서 동일 실행              | callback/분석 계약 통과     |
-| Compose 설정              | 개발 Compose `config --quiet`                           | 운영 Compose `config --quiet` | 문법·환경변수 유효          |
-| 통합 smoke test           | 개발 주소에서 화면·API·WebSocket 확인                   | 운영 Nginx 경유 확인          | `/`, `/api`, WebSocket 연결 |
-
-현재 backend 전용 자동 테스트는 별도로 구성되어 있지 않습니다. API 변경 시 FastAPI 문서 또는 통합 테스트로 확인하고, backend pytest/API smoke test는 후속 과제로 관리합니다.
-
-## 환경변수와 배포 설정 분리
-
-환경변수는 실행 주체별로 분리한다. 실제 `.env` 파일은 Git과 Docker build context에 포함되지 않는다.
-
-| 파일                   | 책임                                                   | 사용하는 환경                   |
-| ---------------------- | ------------------------------------------------------ | ------------------------------- |
-| `/.env`                | Compose project/port/DB 연결 문자열 등 배포 입력값     | Docker Compose, Jenkins 개발 VM |
-| `/backend/.env`        | Docker 없이 FastAPI를 로컬 실행할 때의 backend 설정    | backend 로컬 개발               |
-| `/ai_service/.env`     | Docker 없이 AI 서비스를 로컬 실행할 때의 callback 설정 | AI 로컬 개발                    |
-| `/frontend/.env.local` | Next.js 로컬 실행용 공개 API URL·Kakao JavaScript 키   | frontend 로컬 개발              |
-
-각 서비스의 예시 파일을 복사해 사용한다.
-
-```powershell
-Copy-Item .env.example .env
-Copy-Item backend\.env.example backend\.env
-Copy-Item ai_service\.env.example ai_service\.env
-Copy-Item frontend\.env.example frontend\.env.local
+```bash
+cd frontend
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm exec tsc --noEmit
+pnpm build
 ```
 
-운영 비밀값(데이터베이스 비밀번호, 배포 접근 키)은 `.env` 파일이나 GitHub 저장소에 저장하지 않는다. AWS에서는 Secrets Manager 또는 ECS task definition의 secret 참조를 사용하고, GitHub Actions에서는 Secrets에 저장해 배포 단계에서만 주입한다.
+### Python 문법 검사
 
-Vercel에는 frontend에서 실제 사용하는 공개 변수만 등록한다.
+```bash
+python -m compileall backend ai_service ai-vision mock_ai_server
+```
 
-- `NEXT_PUBLIC_API_BASE_URL`: API가 별도 도메인이라면 해당 HTTPS URL, Nginx와 같은 origin이면 `/api`
-- `NEXT_PUBLIC_KAKAO_MAP_APP_KEY`: 브라우저에서 사용하는 JavaScript 키이며, Kakao Developers의 허용 도메인도 Vercel 도메인으로 추가
+### Compose 설정 검사
 
-`NEXT_PUBLIC_*` 값은 브라우저 번들에 포함되므로 비밀번호·AWS 키·DB URL 같은 비밀값을 넣으면 안 된다.
+```bash
+docker compose config --quiet
+docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet
+```
 
-Docker Compose는 root `.env`의 `COMPOSE_FRONTEND_API_BASE_URL`과 `COMPOSE_FRONTEND_KAKAO_MAP_APP_KEY`만 frontend에 전달합니다. `COMPOSE_FRONTEND_API_BASE_URL`을 빈 값으로 두면 브라우저와 Nginx의 same-origin을 사용하며, API 함수가 포함한 `/api/*` 경로를 그대로 요청합니다. frontend의 `.env.local`은 Docker 없이 `pnpm dev`를 실행할 때만 사용하며, 이때는 `http://localhost:8000`처럼 backend 직접 주소를 설정합니다.
+> Backend 전용 pytest와 브라우저 기반 전체 E2E 테스트는 저장소에 별도 구성돼 있지 않으며, API·Docker smoke test와 수동 통합 테스트를 함께 사용했습니다.
 
-## 배포 방향
+---
+
+## 배포와 CI/CD
+
+Jenkins pipeline은 다음 순서로 동작합니다.
+
+1. 환경변수 파일 주입
+2. Compose·Nginx 설정 사전 검사
+3. Frontend lint image build
+4. AI Service test image 실행
+5. 모델 파일 존재 여부 검사
+6. Docker Compose 배포
+7. 선택적 mock data seed
+8. smoke test
+9. 실패 시 로그 수집
+
+Nginx는 다음 경로를 단일 origin으로 제공합니다.
 
 ```text
-개발: 개인 VirtualBox Ubuntu + Jenkins + Cloudflare 개발 서브도메인
-운영: Vercel frontend + AWS backend/AI/DB + GitHub Actions + Cloudflare 운영 서브도메인
+/       → Frontend
+/api/*  → Backend REST API
+/ws/*   → Backend WebSocket
 ```
 
-상세 운영 가이드와 Cloudflare 서브도메인, AWS/RDS 범위 선택은 [개발·운영 배포 가이드](frontend/docs/deployment/development-production-guide.md)를 확인하세요.
+---
+
+## 프로젝트 상태
+
+| 항목                       | 상태        |
+| -------------------------- | ----------- |
+| MVP 기능 개발              | 완료        |
+| `main` 브랜치 병합         | 완료        |
+| 메인·상세 화면             | 완료        |
+| REST API·DB migration      | 완료        |
+| 비동기 AI callback         | 완료        |
+| WebSocket 실시간 반영      | 완료        |
+| Docker·Nginx 환경          | 완료        |
+| Jenkins 검증·배포 pipeline | 완료        |
+| 실제 CCTV·IoT 연동         | MVP 범위 외 |
+| 운영 사용자 인증·권한      | MVP 범위 외 |
+
+### MVP 데이터 범위
+
+현재 구현은 프로젝트 시연과 통합 흐름 검증을 위해 다음 데이터를 사용합니다.
+
+- 시설별 고정 샘플 이미지
+- 모의 수위·유속 센서 데이터
+- 저장소에 포함된 XGBoost 모델
+- 외부에서 주입하는 YOLO 모델
+
+실제 운영으로 확장할 경우 CCTV/RTSP, IoT/MQTT, 사용자 인증, 서비스 간 callback 인증, 영속 작업 큐와 현장 데이터 기반 모델 검증이 추가로 필요합니다.
+
+---
 
 ## 주요 문서
 
-| 문서                                                                                 | 내용                               |
-| ------------------------------------------------------------------------------------ | ---------------------------------- |
-| [시스템 아키텍처](docs/06_시스템아키텍처.md)                                         | 시스템 구성과 MVP 데이터 흐름      |
-| [API 명세](docs/11_API명세서.md)                                                     | frontend-backend API 계약          |
-| [Docker/Nginx 작업 결과](frontend/docs/steps/step-14-docker-nginx-infrastructure.md) | 컨테이너 구성, 환경변수, 검증 결과 |
-| [개발·운영 배포 가이드](frontend/docs/deployment/development-production-guide.md)    | 팀 개발/운영/CI/CD 가이드          |
+| 문서                                                                              | 내용                      |
+| --------------------------------------------------------------------------------- | ------------------------- |
+| [프로젝트 정의](docs/01_프로젝트정의서.md)                                        | 프로젝트 배경과 목표      |
+| [요구사항 정의서](docs/03_요구사항정의서.md)                                      | 기능·비기능 요구사항      |
+| [MVP 범위](docs/04_MVP범위.md)                                                    | 구현 범위와 제외 범위     |
+| [시스템 아키텍처](docs/06_시스템아키텍처.md)                                      | 시스템 구성과 데이터 흐름 |
+| [ERD](docs/07_ERD.md)                                                             | 데이터 모델과 관계        |
+| [YOLO·XGBoost PoC](docs/09_YOLO_XGBoost_PoC.md)                                   | AI 분석 설계와 실험       |
+| [API 명세](docs/11_API명세서.md)                                                  | Frontend·Backend API 계약 |
+| [개발·운영 배포 가이드](frontend/docs/deployment/development-production-guide.md) | 실행·배포·환경변수 가이드 |
+
+---
+
+## 생성형 AI 활용 고지
+
+코드 작성, Docker·Nginx 설정, 테스트 보조와 문서 정리에 생성형 AI 도구를 활용했습니다. 모든 결과물은 팀원이 요구사항과 실제 실행 결과를 검토한 후 반영했습니다.
+
+비밀정보, 배포 권한, 인프라 비용, 운영 장애 대응은 생성형 AI의 제안만으로 결정하지 않습니다.
+
+---
+
+<div align="center">
+
+**SmartDrain의 핵심 성과는 이미지 분석, 센서 데이터, 비동기 AI 처리, DB 저장과 실시간 대시보드를 하나의 추적 가능한 흐름으로 연결한 것입니다.**
+
+</div>

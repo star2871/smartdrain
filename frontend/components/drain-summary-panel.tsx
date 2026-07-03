@@ -24,19 +24,23 @@ import { FallbackImage } from "@/components/fallback-image";
 import { ImagePreviewDialog } from "@/components/image-preview-dialog";
 import { formatDateTimeForDisplay } from "@/lib/date-format";
 import { getDrainDetailHref } from "@/lib/drain-route";
+import { formatFinalDecisionLabel } from "@/lib/final-decision-label";
 
 export function DrainSummaryPanel({
   drain,
   onClose,
   imageUrl = PLACEHOLDER_IMAGES.facility,
+  showImageRefreshPlaceholder = false,
 }: {
   drain: DrainFacility;
   onClose?: () => void;
   imageUrl?: string;
+  showImageRefreshPlaceholder?: boolean;
 }) {
   const meta = STATUS_META[drain.status];
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const snapshotImageKey = `${drain.id}:${imageUrl}`;
 
   return (
     <div className="flex h-full flex-col rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
@@ -84,9 +88,9 @@ export function DrainSummaryPanel({
             </p>
             <p
               className={cn("mt-1 line-clamp-3 text-sm font-bold leading-5", meta.text)}
-              title={drain.judgement}
+              title={formatFinalDecisionLabel(drain.judgement)}
             >
-              {drain.judgement}
+              {formatFinalDecisionLabel(drain.judgement)}
             </p>
           </div>
         </div>
@@ -143,11 +147,12 @@ export function DrainSummaryPanel({
           )}
         >
           <div className="relative aspect-[16/9] overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-800 md:aspect-[4/3]">
-            <FallbackImage
+            <SnapshotImage
+              key={showImageRefreshPlaceholder ? snapshotImageKey : undefined}
               src={imageUrl}
               fallbackSrc={PLACEHOLDER_IMAGES.facility}
               alt={`${drain.road} 빗물받이 CCTV 스냅샷`}
-              className="size-full object-cover grayscale"
+              showRefreshPlaceholder={showImageRefreshPlaceholder}
             />
             <button
               type="button"
@@ -210,6 +215,45 @@ export function DrainSummaryPanel({
         />
       </div>
     </div>
+  );
+}
+
+function SnapshotImage({
+  src,
+  fallbackSrc,
+  alt,
+  showRefreshPlaceholder,
+}: {
+  src: string;
+  fallbackSrc: string;
+  alt: string;
+  showRefreshPlaceholder: boolean;
+}) {
+  const [isLoading, setIsLoading] = useState(showRefreshPlaceholder);
+
+  return (
+    <>
+      <FallbackImage
+        src={src}
+        fallbackSrc={fallbackSrc}
+        alt={alt}
+        className={cn(
+          "size-full object-cover transition-opacity duration-200",
+          showRefreshPlaceholder && isLoading ? "opacity-0" : "opacity-100",
+        )}
+        onLoad={() => setIsLoading(false)}
+        onError={() => setIsLoading(false)}
+      />
+      {showRefreshPlaceholder && isLoading && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-100 px-3 text-center dark:bg-slate-800">
+          <span className="block h-2 w-2/3 animate-pulse rounded-full bg-slate-300 dark:bg-slate-700" />
+          <span className="block h-2 w-1/2 animate-pulse rounded-full bg-slate-200 dark:bg-slate-700/70" />
+          <span className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-300">
+            CCTV 이미지 갱신 중
+          </span>
+        </div>
+      )}
+    </>
   );
 }
 

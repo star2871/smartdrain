@@ -2,13 +2,48 @@ services:
   backend:
     volumes:
       - ./:/app
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/backend"]
+    environment:
+      # Presentation demo defaults. Set DEMO_SIMULATOR_ENABLED to "false"
+      # or remove this block after the demo branch is no longer needed.
+      DEMO_SIMULATOR_ENABLED: ${COMPOSE_DEMO_SIMULATOR_ENABLED:-false}
+      DEMO_SIMULATOR_MODE: ${COMPOSE_DEMO_SIMULATOR_MODE:-direct}
+      DEMO_SIMULATOR_INTERVAL_SECONDS: ${COMPOSE_DEMO_SIMULATOR_INTERVAL_SECONDS:-30}
+      DEMO_SIMULATOR_START_DELAY_SECONDS: ${COMPOSE_DEMO_SIMULATOR_START_DELAY_SECONDS:-10}
+      DEMO_SIMULATOR_TARGET_DRAIN_CODE: ${COMPOSE_DEMO_SIMULATOR_TARGET_DRAIN_CODE:-DR-003}
+      DEMO_SIMULATOR_AUTO_START: ${COMPOSE_DEMO_SIMULATOR_AUTO_START:-false}
+      DEMO_SIMULATOR_RANDOMIZE: ${COMPOSE_DEMO_SIMULATOR_RANDOMIZE:-true}
+      DEMO_MANUAL_DEFAULT_WATER_LEVEL_CM: ${COMPOSE_DEMO_MANUAL_DEFAULT_WATER_LEVEL_CM:-30}
+      DEMO_MANUAL_DEFAULT_FLOW_VELOCITY_MPS: ${COMPOSE_DEMO_MANUAL_DEFAULT_FLOW_VELOCITY_MPS:-0.8}
+      DEMO_CONTROL_TOKEN: ${DEMO_CONTROL_TOKEN:-}
+    command:
+      [
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+        "--reload-dir",
+        "/app/backend",
+      ]
 
   ai-service:
     volumes:
       - ./:/app
       - ./mock_data/ai_image_samples:/app/mock_data/ai_image_samples:ro
-    command: ["uvicorn", "ai_service.http.app:app", "--host", "0.0.0.0", "--port", "9000", "--reload", "--reload-dir", "/app/ai_service"]
+    command:
+      [
+        "uvicorn",
+        "ai_service.http.app:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "9000",
+        "--reload",
+        "--reload-dir",
+        "/app/ai_service",
+      ]
 
   frontend:
     build:

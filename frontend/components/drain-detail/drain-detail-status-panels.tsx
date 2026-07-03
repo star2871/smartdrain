@@ -15,6 +15,7 @@ import { RiskMap } from "@/components/risk-map";
 import { StatusBadge } from "@/components/status-badge";
 import type { DrainDetailData } from "@/lib/api/drain-data";
 import { formatDateTimeForDisplay } from "@/lib/date-format";
+import { formatFinalDecisionLabel } from "@/lib/final-decision-label";
 import { STATUS_META, type DrainFacility } from "@/lib/mock-data";
 import { PLACEHOLDER_IMAGES } from "@/lib/placeholders";
 import { cn } from "@/lib/utils";
@@ -120,7 +121,9 @@ export function CurrentRiskCard({
                     </span>
                 </RiskTile>
                 <RiskTile icon={AlertTriangle} label="판정 결과">
-                    <span className={cn("text-base font-bold", meta.text)}>{drain.judgement}</span>
+                    <span className={cn("text-base font-bold", meta.text)}>
+                        {formatFinalDecisionLabel(drain.judgement)}
+                    </span>
                 </RiskTile>
             </div>
         </div>

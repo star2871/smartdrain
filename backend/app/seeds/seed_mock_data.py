@@ -178,6 +178,25 @@ def _mock_image_url(drain_id: int) -> str | None:
     return f"{MOCK_IMAGE_URL_PREFIX}/drain_{drain_id}.jpg"
 
 
+def _backfill_mock_image_url(db: Session, drain: Drain) -> bool:
+    image_url = _mock_image_url(drain.id)
+    if image_url is None:
+        return False
+
+    updated = False
+    yolo_results = (
+        db.query(YoloResult)
+        .filter(YoloResult.drain_id == drain.id)
+        .order_by(YoloResult.captured_at.desc())
+        .all()
+    )
+    for yolo_result in yolo_results:
+        if not yolo_result.image_url:
+            yolo_result.image_url = image_url
+            updated = True
+    return updated
+
+
 def _summary_line(item: MockDrainData, skipped: bool = False) -> str:
     status = " | 이미 존재함 / 건너뜀" if skipped else ""
     return (
@@ -201,6 +220,7 @@ def seed_mock_data() -> None:
         for index, item in enumerate(MOCK_DRAINS):
             existing = db.scalars(select(Drain).where(Drain.drain_code == item.drain_code)).first()
             if existing:
+                _backfill_mock_image_url(db, existing)
                 skipped.append(item)
                 continue
 

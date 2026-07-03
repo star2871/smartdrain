@@ -3,6 +3,7 @@
 import { useCallback, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+    dashboardSummaryFromDrains,
     mergeDrainStatusEventIntoFacility,
     mergeYoloEventIntoFacility,
 } from "@/lib/api/adapters";
@@ -29,9 +30,19 @@ export function RealtimeDrainSync() {
             (drain) => drain.id === event.payload.drainId,
         )?.road;
 
-        queryClient.setQueryData<DrainFacility[]>(drainQueryKeys.all, (drains) =>
-            drains?.map((drain) => mergeDrainStatusEventIntoFacility(drain, event)),
-        );
+        let nextDrains: DrainFacility[] | undefined;
+        queryClient.setQueryData<DrainFacility[]>(drainQueryKeys.all, (drains) => {
+            nextDrains = drains?.map((drain) =>
+                mergeDrainStatusEventIntoFacility(drain, event),
+            );
+            return nextDrains;
+        });
+        if (nextDrains) {
+            queryClient.setQueryData(
+                drainQueryKeys.summary,
+                dashboardSummaryFromDrains(nextDrains),
+            );
+        }
         const detailKey = drainQueryKeys.detail(event.payload.drainId);
         if (queryClient.getQueryData(detailKey)) {
             queryClient.setQueryData(detailKey, (detail: { drain: DrainFacility } | null | undefined) =>
